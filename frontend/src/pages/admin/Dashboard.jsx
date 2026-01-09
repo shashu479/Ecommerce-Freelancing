@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useProducts } from '../../context/ProductContext';
 import { useOrders } from '../../context/OrderContext';
 import { Navigate } from 'react-router-dom';
-import { Users, ShoppingBag, Package, Settings, LogOut, Check, X, Plus, Edit2, Trash2, Eye, FileText } from 'lucide-react';
+import { Users, ShoppingBag, Package, Settings, LogOut, Check, X, Plus, Edit2, Trash2, Eye, FileText, TicketPercent } from 'lucide-react';
 import client from '../../api/client';
 
 const AdminDashboard = () => {
@@ -13,7 +13,15 @@ const AdminDashboard = () => {
 
     const [activeTab, setActiveTab] = useState('dashboard');
     const [inquiries, setInquiries] = useState([]);
+    const [users, setUsers] = useState([]);
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+    const [isCouponModalOpen, setIsCouponModalOpen] = useState(false);
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [couponData, setCouponData] = useState({
+        code: '',
+        discountValue: '',
+        expiryDate: ''
+    });
 
     React.useEffect(() => {
         const fetchInquiries = async () => {
@@ -23,6 +31,13 @@ const AdminDashboard = () => {
                     setInquiries(data);
                 } catch (error) {
                     console.error("Failed to fetch inquiries", error);
+                }
+            } else if (activeTab === 'users') {
+                try {
+                    const { data } = await client.get('/auth/users');
+                    setUsers(data);
+                } catch (error) {
+                    console.error("Failed to fetch users", error);
                 }
             }
         };
@@ -106,6 +121,33 @@ const AdminDashboard = () => {
         setCurrentProduct(initialProductState);
         setIsEditingData(false);
         setIsProductModalOpen(true);
+    };
+
+    // --- Coupon Handlers ---
+    const handleOpenCouponModal = (user = null) => {
+        setSelectedUser(user);
+        setCouponData({
+            code: user ? `WELCOME-${user.name.split(' ')[0].toUpperCase()}-${Math.floor(Math.random() * 100)}` : '',
+            discountValue: '10',
+            expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        });
+        setIsCouponModalOpen(true);
+    };
+
+    const handleCreateCoupon = async (e) => {
+        e.preventDefault();
+        try {
+            await client.post('/coupons', {
+                ...couponData,
+                discountValue: parseFloat(couponData.discountValue),
+                assignedTo: selectedUser?._id,
+                discountType: 'percentage'
+            });
+            alert(`Coupon ${couponData.code} created successfully!`);
+            setIsCouponModalOpen(false);
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to create coupon');
+        }
     };
 
     // --- Render Sections ---
@@ -330,6 +372,51 @@ const AdminDashboard = () => {
         </div>
     );
 
+    const renderUsers = () => (
+        <div className="bg-surface rounded-sm shadow-sm border border-secondary/10 overflow-hidden">
+            <div className="p-6 border-b border-secondary/10 flex justify-between items-center">
+                <h2 className="text-xl font-bold text-primary">Registered Users</h2>
+                <button onClick={() => handleOpenCouponModal()} className="bg-accent text-primary px-4 py-2 text-sm font-bold uppercase tracking-widest hover:bg-white transition-all rounded-sm flex items-center gap-2">
+                    <TicketPercent size={16} /> Create General Coupon
+                </button>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-secondary/5 text-text-secondary font-medium uppercase tracking-wider">
+                        <tr>
+                            <th className="px-6 py-4">Name</th>
+                            <th className="px-6 py-4">Email</th>
+                            <th className="px-6 py-4">Role</th>
+                            <th className="px-6 py-4">Total Orders</th>
+                            <th className="px-6 py-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-secondary/10">
+                        {users.map(user => (
+                            <tr key={user._id} className="hover:bg-secondary/5 transition-colors">
+                                <td className="px-6 py-4 font-medium text-primary">{user.name}</td>
+                                <td className="px-6 py-4 text-text-secondary">{user.email}</td>
+                                <td className="px-6 py-4">
+                                    {user.isAdmin ? <span className="text-red-500 font-bold">Admin</span> : 'Customer'}
+                                </td>
+                                <td className="px-6 py-4 font-bold">{user.totalOrders}</td>
+                                <td className="px-6 py-4">
+                                    <button
+                                        onClick={() => handleOpenCouponModal(user)}
+                                        className="flex items-center gap-1 text-xs font-bold uppercase tracking-wide bg-blue-50 text-blue-700 px-3 py-1 rounded-sm hover:bg-blue-100 transition-colors"
+                                    >
+                                        <TicketPercent size={14} /> Send Coupon
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {users.length === 0 && <div className="p-8 text-center text-text-secondary">No users found.</div>}
+            </div>
+        </div>
+    );
+
     return (
         <div className="min-h-screen bg-background pt-20 flex">
             {/* Sidebar */}
@@ -343,6 +430,7 @@ const AdminDashboard = () => {
                         {[
 
                             { id: 'dashboard', label: 'Dashboard', icon: Users },
+                            { id: 'users', label: 'Users', icon: Users },
                             { id: 'orders', label: 'Orders', icon: Package },
                             { id: 'products', label: 'Products', icon: ShoppingBag },
                             { id: 'inquiries', label: 'Inquiries', icon: FileText },
@@ -382,6 +470,7 @@ const AdminDashboard = () => {
                 {activeTab === 'orders' && renderOrders()}
                 {activeTab === 'products' && renderProducts()}
                 {activeTab === 'inquiries' && renderInquiries()}
+                {activeTab === 'users' && renderUsers()}
                 {activeTab === 'content' && renderContent()}
             </main>
 
@@ -460,6 +549,62 @@ const AdminDashboard = () => {
                             <div className="pt-4 flex justify-end gap-3">
                                 <button type="button" onClick={() => setIsProductModalOpen(false)} className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-secondary/10 rounded-sm">Cancel</button>
                                 <button type="submit" className="px-6 py-2 text-sm font-bold uppercase tracking-widest bg-primary text-surface hover:bg-accent hover:text-primary transition-colors rounded-sm">Save Product</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Coupon Modal */}
+            {isCouponModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-surface w-full max-w-md rounded-sm shadow-xl p-8">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-primary">
+                                {selectedUser ? `Send Coupon to ${selectedUser.name}` : 'Create General Coupon'}
+                            </h2>
+                            <button onClick={() => setIsCouponModalOpen(false)} className="text-text-secondary hover:text-red-500">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateCoupon} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-text-secondary mb-1">Coupon Code</label>
+                                <input
+                                    required
+                                    type="text"
+                                    value={couponData.code}
+                                    onChange={e => setCouponData({ ...couponData, code: e.target.value.toUpperCase() })}
+                                    className="w-full bg-background border border-secondary/20 p-2 rounded-sm font-mono tracking-widest uppercase"
+                                    placeholder="SUMMER2026"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-secondary mb-1">Discount Percentage (%)</label>
+                                <input
+                                    required
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    value={couponData.discountValue}
+                                    onChange={e => setCouponData({ ...couponData, discountValue: e.target.value })}
+                                    className="w-full bg-background border border-secondary/20 p-2 rounded-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-secondary mb-1">Expiry Date</label>
+                                <input
+                                    required
+                                    type="date"
+                                    value={couponData.expiryDate}
+                                    onChange={e => setCouponData({ ...couponData, expiryDate: e.target.value })}
+                                    className="w-full bg-background border border-secondary/20 p-2 rounded-sm"
+                                />
+                            </div>
+
+                            <div className="pt-4 flex justify-end gap-3">
+                                <button type="button" onClick={() => setIsCouponModalOpen(false)} className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-secondary/10 rounded-sm">Cancel</button>
+                                <button type="submit" className="px-6 py-2 text-sm font-bold uppercase tracking-widest bg-primary text-surface hover:bg-accent hover:text-primary transition-colors rounded-sm">Create Coupon</button>
                             </div>
                         </form>
                     </div>

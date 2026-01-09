@@ -1,13 +1,37 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const Order = require('../models/Order');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const { protect, admin } = require('../middleware/authMiddleware');
 
 // Generate JWT
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'secret123', { expiresIn: '30d' });
 };
+
+// @desc    Get all users with stats
+// @route   GET /api/auth/users
+// @access  Private/Admin
+router.get('/users', protect, admin, async (req, res) => {
+    try {
+        const users = await User.find({});
+        const usersWithStats = await Promise.all(users.map(async (user) => {
+            const orderCount = await Order.countDocuments({ user: user._id });
+            return {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                isAdmin: user.isAdmin,
+                totalOrders: orderCount
+            };
+        }));
+        res.json(usersWithStats);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
 
 // @desc    Register new user
 // @route   POST /api/auth/register

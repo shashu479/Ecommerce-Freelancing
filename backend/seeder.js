@@ -4,6 +4,7 @@ const products = require('./data/products');
 const User = require('./models/User');
 const Product = require('./models/Product');
 const Order = require('./models/Order');
+const Coupon = require('./models/Coupon');
 const connectDB = require('./config/db');
 const bcrypt = require('bcryptjs');
 
@@ -16,6 +17,7 @@ const importData = async () => {
         await Order.deleteMany();
         await Product.deleteMany();
         await User.deleteMany();
+        await Coupon.deleteMany();
 
         // Create Users
         const salt = await bcrypt.genSalt(10);
@@ -36,6 +38,35 @@ const importData = async () => {
             isAdmin: false
         });
         console.log(`Created User: ${normalUser.email}`);
+
+        // Create Coupons
+        await Coupon.create([
+            {
+                code: 'WELCOME10',
+                discountType: 'percentage',
+                discountValue: 10,
+                isActive: true,
+                assignedTo: null, // General
+                description: '10% off for everyone'
+            },
+            {
+                code: 'SAVE500',
+                discountType: 'fixed',
+                discountValue: 500,
+                isActive: true,
+                assignedTo: null,
+                description: 'Flat ₹500 off'
+            },
+            {
+                code: 'USERONLY',
+                discountType: 'percentage',
+                discountValue: 20,
+                isActive: true,
+                assignedTo: normalUser._id, // Specific to normal user
+                description: '20% off for John Doe'
+            }
+        ]);
+        console.log('Coupons Imported!');
 
         console.log('Users Imported!');
 
@@ -59,6 +90,7 @@ const destroyData = async () => {
         await Order.deleteMany();
         await Product.deleteMany();
         await User.deleteMany();
+        await Coupon.deleteMany();
 
         console.log('Data Destroyed!');
         process.exit();
