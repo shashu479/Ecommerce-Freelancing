@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useProducts } from '../../context/ProductContext';
 import { useOrders } from '../../context/OrderContext';
 import { Navigate } from 'react-router-dom';
-import { Users, ShoppingBag, Package, Settings, LogOut, Check, X, Plus, Edit2, Trash2, Eye, FileText, TicketPercent } from 'lucide-react';
+import { Users, ShoppingBag, Package, Settings, LogOut, Check, X, Plus, Edit2, Trash2, Eye, FileText, TicketPercent, ChevronDown, ChevronUp, Clock, CheckCircle, Truck, PackageCheck } from 'lucide-react';
 import client from '../../api/client';
 
 const AdminDashboard = () => {
@@ -12,6 +12,7 @@ const AdminDashboard = () => {
     const { orders, updateOrderStatus, activeUsers } = useOrders();
 
     const [activeTab, setActiveTab] = useState('dashboard');
+    const [expandedOrders, setExpandedOrders] = useState({});
     const [inquiries, setInquiries] = useState([]);
     const [users, setUsers] = useState([]);
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -156,7 +157,7 @@ const AdminDashboard = () => {
             <div className="bg-surface p-6 rounded-sm shadow-sm border border-secondary/10 flex items-center justify-between">
                 <div>
                     <p className="text-text-secondary text-sm font-medium uppercase tracking-wider">Total Sales</p>
-                    <h3 className="text-3xl font-bold text-primary mt-1">₹{orders.reduce((acc, curr) => acc + (curr.total || 0), 0)}</h3>
+                    <h3 className="text-3xl font-bold text-primary mt-1">₹{orders.reduce((acc, curr) => acc + (curr.totalPrice || 0), 0).toFixed(2)}</h3>
                 </div>
                 <div className="w-12 h-12 bg-green-50 text-green-600 rounded-full flex items-center justify-center">
                     <ShoppingBag size={24} />
@@ -165,7 +166,7 @@ const AdminDashboard = () => {
             <div className="bg-surface p-6 rounded-sm shadow-sm border border-secondary/10 flex items-center justify-between">
                 <div>
                     <p className="text-text-secondary text-sm font-medium uppercase tracking-wider">Active Orders</p>
-                    <h3 className="text-3xl font-bold text-primary mt-1">{orders.filter(o => o.status !== 'Completed').length}</h3>
+                    <h3 className="text-3xl font-bold text-primary mt-1">{orders.filter(o => o.status !== 'Completed' && o.status !== 'Delivered').length}</h3>
                 </div>
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
                     <Package size={24} />
@@ -183,53 +184,183 @@ const AdminDashboard = () => {
         </div>
     );
 
+    // Helper function to get order status details
+    const getOrderStatusInfo = (status) => {
+        const statusMap = {
+            'Pending': { color: 'yellow', icon: Clock, step: 1, label: 'Order Placed' },
+            'Approved': { color: 'blue', icon: CheckCircle, step: 2, label: 'Confirmed' },
+            'Packed': { color: 'purple', icon: PackageCheck, step: 3, label: 'Packed' },
+            'Shipped': { color: 'indigo', icon: Truck, step: 4, label: 'Shipped' },
+            'Delivered': { color: 'green', icon: CheckCircle, step: 5, label: 'Delivered' }
+        };
+        return statusMap[status] || statusMap['Pending'];
+    };
+
+    const toggleOrderExpand = (orderId) => {
+        setExpandedOrders(prev => ({
+            ...prev,
+            [orderId]: !prev[orderId]
+        }));
+    };
+
     const renderOrders = () => (
         <div className="bg-surface rounded-sm shadow-sm border border-secondary/10 overflow-hidden">
             <div className="p-6 border-b border-secondary/10">
                 <h2 className="text-xl font-bold text-primary">Recent Orders</h2>
+                <p className="text-xs text-text-secondary mt-1">Manage order workflow: Pending → Approved → Packed → Shipped</p>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-secondary/5 text-text-secondary font-medium uppercase tracking-wider">
                         <tr>
+                            <th className="px-6 py-4 w-8"></th>
                             <th className="px-6 py-4">Order ID</th>
                             <th className="px-6 py-4">Date</th>
                             <th className="px-6 py-4">Customer</th>
+                            <th className="px-6 py-4">Items</th>
                             <th className="px-6 py-4">Status</th>
                             <th className="px-6 py-4">Total</th>
                             <th className="px-6 py-4">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-secondary/10">
-                        {orders.map(order => (
-                            <tr key={order.id} className="hover:bg-secondary/5 transition-colors">
-                                <td className="px-6 py-4 font-mono">{order.id}</td>
-                                <td className="px-6 py-4">{new Date(order.date).toLocaleDateString()}</td>
-                                <td className="px-6 py-4">{order.customer?.name || "Guest"}</td>
-                                <td className="px-6 py-4">
-                                    <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase tracking-wide
-                                        ${order.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
-                                            order.status === 'Approved' ? 'bg-blue-100 text-blue-800' :
-                                                order.status === 'Shipped' ? 'bg-indigo-100 text-indigo-800' :
-                                                    'bg-green-100 text-green-800'}`}>
-                                        {order.status}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 font-bold">₹{order.total}</td>
-                                <td className="px-6 py-4 flex gap-2">
-                                    {order.status === 'Pending' && (
-                                        <button onClick={() => updateOrderStatus(order.id, 'Approved')} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Approve">
-                                            <Check size={18} />
-                                        </button>
+                        {orders.map(order => {
+                            const isExpanded = expandedOrders[order._id];
+                            const statusInfo = getOrderStatusInfo(order.status);
+                            return (
+                                <React.Fragment key={order._id}>
+                                    <tr className="hover:bg-secondary/5 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <button
+                                                onClick={() => toggleOrderExpand(order._id)}
+                                                className="text-text-secondary hover:text-primary transition-colors"
+                                                title="Toggle tracking view"
+                                            >
+                                                {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                            </button>
+                                        </td>
+                                        <td className="px-6 py-4 font-mono text-xs">{order._id.slice(-8)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap">{new Date(order.createdAt).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 font-medium">{order.user?.name || "Guest"}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="text-xs text-text-secondary">
+                                                {order.orderItems?.length || 0} item(s)
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-1">
+                                                <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase tracking-wide text-center
+                                                    ${order.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                                                        order.status === 'Approved' ? 'bg-blue-100 text-blue-800' :
+                                                            order.status === 'Packed' ? 'bg-purple-100 text-purple-800' :
+                                                                order.status === 'Shipped' ? 'bg-indigo-100 text-indigo-800' :
+                                                                    'bg-green-100 text-green-800'}`}>
+                                                    {order.status}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 font-bold whitespace-nowrap">₹{order.totalPrice?.toFixed(2)}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex gap-1">
+                                                {order.status === 'Pending' && (
+                                                    <button
+                                                        onClick={() => updateOrderStatus(order._id, 'Approved')}
+                                                        className="px-3 py-1 text-xs font-bold bg-green-50 text-green-700 hover:bg-green-100 rounded transition-colors whitespace-nowrap"
+                                                        title="Approve Order"
+                                                    >
+                                                        ✓ Approve
+                                                    </button>
+                                                )}
+                                                {order.status === 'Approved' && (
+                                                    <button
+                                                        onClick={() => updateOrderStatus(order._id, 'Packed')}
+                                                        className="px-3 py-1 text-xs font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 rounded transition-colors whitespace-nowrap"
+                                                        title="Mark as Packed"
+                                                    >
+                                                        📦 Pack
+                                                    </button>
+                                                )}
+                                                {order.status === 'Packed' && (
+                                                    <button
+                                                        onClick={() => updateOrderStatus(order._id, 'Shipped')}
+                                                        className="px-3 py-1 text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded transition-colors whitespace-nowrap"
+                                                        title="Mark as Shipped"
+                                                    >
+                                                        🚚 Ship
+                                                    </button>
+                                                )}
+                                                {order.status === 'Shipped' && (
+                                                    <span className="px-3 py-1 text-xs text-text-secondary italic">In Transit</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {isExpanded && (
+                                        <tr className="bg-secondary/5">
+                                            <td colSpan="8" className="px-6 py-6">
+                                                <div className="max-w-4xl">
+                                                    {/* Tracking Timeline */}
+                                                    <div className="mb-6">
+                                                        <p className="text-xs font-bold uppercase text-text-secondary mb-4 tracking-wider">Order Tracking</p>
+                                                        <div className="flex items-center justify-between relative">
+                                                            {/* Progress Line */}
+                                                            <div className="absolute top-5 left-0 right-0 h-1 bg-secondary/20">
+                                                                <div
+                                                                    className="h-full bg-primary transition-all duration-500"
+                                                                    style={{ width: `${((statusInfo.step - 1) / 3) * 100}%` }}
+                                                                />
+                                                            </div>
+
+                                                            {/* Steps */}
+                                                            {['Pending', 'Approved', 'Packed', 'Shipped'].map((status, idx) => {
+                                                                const stepInfo = getOrderStatusInfo(status);
+                                                                const isComplete = statusInfo.step > idx + 1;
+                                                                const isCurrent = statusInfo.step === idx + 1;
+                                                                const StepIcon = stepInfo.icon;
+
+                                                                return (
+                                                                    <div key={status} className="flex flex-col items-center relative z-10">
+                                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-all ${isComplete ? 'bg-primary text-white' :
+                                                                                isCurrent ? 'bg-primary text-white ring-4 ring-primary/20' :
+                                                                                    'bg-white border-2 border-secondary/20 text-text-secondary'
+                                                                            }`}>
+                                                                            <StepIcon size={18} />
+                                                                        </div>
+                                                                        <p className={`text-xs font-medium text-center ${isComplete || isCurrent ? 'text-primary font-bold' : 'text-text-secondary'
+                                                                            }`}>
+                                                                            {stepInfo.label}
+                                                                        </p>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Order Items */}
+                                                    <div className="bg-white rounded-sm border border-secondary/10 p-4">
+                                                        <p className="text-xs font-bold uppercase text-text-secondary mb-3">Order Items</p>
+                                                        <div className="space-y-2">
+                                                            {order.orderItems?.map((item, idx) => (
+                                                                <div key={idx} className="flex items-center gap-3 text-sm">
+                                                                    <div className="w-10 h-10 bg-background rounded-sm border border-secondary/10 p-1 flex-shrink-0">
+                                                                        <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                                                                    </div>
+                                                                    <div className="flex-grow">
+                                                                        <p className="font-medium text-primary">{item.name}</p>
+                                                                        <p className="text-xs text-text-secondary">Qty: {item.quantity} × ₹{item.price}</p>
+                                                                    </div>
+                                                                    <p className="font-bold text-primary">₹{(item.quantity * item.price).toFixed(2)}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
                                     )}
-                                    {order.status === 'Approved' && (
-                                        <button onClick={() => updateOrderStatus(order.id, 'Shipped')} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="Ship">
-                                            <Package size={18} />
-                                        </button>
-                                    )}
-                                </td>
-                            </tr>
-                        ))}
+                                </React.Fragment>
+                            );
+                        })}
                     </tbody>
                 </table>
                 {orders.length === 0 && <div className="p-8 text-center text-text-secondary">No orders found.</div>}

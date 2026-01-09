@@ -103,7 +103,7 @@ const Home = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-20">
                         {products.slice(0, 2).map((product) => (
-                            <Link key={product.id} to={`/product/${product.slug}`} className="group cursor-pointer">
+                            <Link key={product._id || product.id} to={`/product/${product.slug}`} className="group cursor-pointer">
                                 <div className="relative aspect-[4/5] overflow-hidden bg-background mb-6 rounded-sm">
                                     <div className="absolute inset-0 bg-primary/5 group-hover:bg-transparent transition-colors duration-500" />
                                     <img

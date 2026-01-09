@@ -93,7 +93,7 @@ const Cart = () => {
             quantity: item.quantity,
             image: item.image,
             price: item.price,
-            product: item.id
+            product: item._id || item.id // Ensure we pass the ID as 'product'
         }));
 
         const finalTotal = Math.max(0, getCartTotal() - discount.amount);
@@ -107,6 +107,9 @@ const Cart = () => {
                 country: 'Country'
             },
             paymentMethod: 'COD',
+            itemsPrice: getCartTotal(), // Required by backend schema?
+            taxPrice: 0, // Placeholder
+            shippingPrice: 0, // Placeholder
             totalPrice: finalTotal,
         };
 

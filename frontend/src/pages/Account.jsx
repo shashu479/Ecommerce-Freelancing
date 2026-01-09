@@ -2,15 +2,24 @@ import React, { useState, useEffect } from 'react';
 import {
     LayoutDashboard, User, Package, MapPin,
     Heart, Settings, HelpCircle, LogOut, CheckCircle, Clock,
-    Lock, Mail
+    Lock, Mail, Truck, PackageCheck
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useOrders } from '../context/OrderContext';
 
 const Account = () => {
-    const { user, login, register, logout } = useAuth();
+    const { user, login, register, logout, isAdmin } = useAuth();
+    const { orders } = useOrders();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('dashboard');
+
+    // Redirect admin users to admin dashboard
+    useEffect(() => {
+        if (user && isAdmin) {
+            navigate('/admin/dashboard');
+        }
+    }, [user, isAdmin, navigate]);
 
     // Auth Form State
     const [isRegistering, setIsRegistering] = useState(false);
@@ -32,10 +41,17 @@ const Account = () => {
         loyaltyPoints: 120 // Placeholder
     };
 
-    const orders = [
-        { id: 'ORD-9021', items: 'Kashmiri Mongra Saffron (1g)', qty: '2', amount: '₹1,700', status: 'Processing', date: '2026-01-08' },
-        { id: 'ORD-8940', items: 'Premium Hing (50g)', qty: '1', amount: '₹450', status: 'Delivered', date: '2025-12-20' },
-    ];
+    // Helper function to get order status details
+    const getOrderStatusInfo = (status) => {
+        const statusMap = {
+            'Pending': { color: 'yellow', icon: Clock, step: 1, label: 'Order Placed' },
+            'Approved': { color: 'blue', icon: CheckCircle, step: 2, label: 'Confirmed' },
+            'Packed': { color: 'purple', icon: PackageCheck, step: 3, label: 'Packed' },
+            'Shipped': { color: 'indigo', icon: Truck, step: 4, label: 'Shipped' },
+            'Delivered': { color: 'green', icon: CheckCircle, step: 5, label: 'Delivered' }
+        };
+        return statusMap[status] || statusMap['Pending'];
+    };
 
     const handleAuthChange = (e) => {
         setAuthData({ ...authData, [e.target.name]: e.target.value });
@@ -235,44 +251,61 @@ const Account = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <div className="bg-background p-6 rounded-sm border-t-4 border-accent shadow-sm">
                                         <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Total Orders</p>
-                                        <h3 className="text-3xl font-bold text-primary mt-2">12</h3>
+                                        <h3 className="text-3xl font-bold text-primary mt-2">{orders.length}</h3>
                                     </div>
                                     <div className="bg-background p-6 rounded-sm border-t-4 border-primary shadow-sm">
                                         <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Pending Delivery</p>
-                                        <h3 className="text-3xl font-bold text-primary mt-2">1</h3>
+                                        <h3 className="text-3xl font-bold text-primary mt-2">
+                                            {orders.filter(o => o.status !== 'Delivered').length}
+                                        </h3>
                                     </div>
                                     <div className="bg-background p-6 rounded-sm border-t-4 border-secondary shadow-sm">
-                                        <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Loyalty Points</p>
-                                        <h3 className="text-3xl font-bold text-primary mt-2">{userProfile.loyaltyPoints}</h3>
+                                        <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Total Spent</p>
+                                        <h3 className="text-3xl font-bold text-primary mt-2">
+                                            ₹{orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0).toFixed(0)}
+                                        </h3>
                                     </div>
                                 </div>
 
                                 <div>
                                     <h3 className="font-heading text-xl text-primary font-bold mb-4">Recent Orders</h3>
-                                    <div className="space-y-4">
-                                        {orders.map((order) => (
-                                            <div key={order.id} className="flex flex-col md:flex-row justify-between items-center border border-secondary/10 p-4 rounded-sm bg-background/50 hover:bg-background transition-colors">
-                                                <div className="flex items-center gap-4 w-full md:w-auto">
-                                                    <div className={`p-2 rounded-full ${order.status === 'Delivered' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                        {order.status === 'Delivered' ? <CheckCircle size={20} /> : <Clock size={20} />}
+                                    {orders.length > 0 ? (
+                                        <div className="space-y-4">
+                                            {orders.slice(0, 3).map((order) => {
+                                                const statusInfo = getOrderStatusInfo(order.status);
+                                                const StatusIcon = statusInfo.icon;
+                                                return (
+                                                    <div key={order._id} className="flex flex-col md:flex-row justify-between items-center border border-secondary/10 p-4 rounded-sm bg-background/50 hover:bg-background transition-colors">
+                                                        <div className="flex items-center gap-4 w-full md:w-auto">
+                                                            <div className={`p-2 rounded-full bg-${statusInfo.color}-100 text-${statusInfo.color}-700`}>
+                                                                <StatusIcon size={20} />
+                                                            </div>
+                                                            <div>
+                                                                <h4 className="font-bold text-primary text-sm">
+                                                                    {order.orderItems?.[0]?.name || 'Order'}
+                                                                    {order.orderItems?.length > 1 && ` +${order.orderItems.length - 1} more`}
+                                                                </h4>
+                                                                <p className="text-xs text-text-secondary">
+                                                                    Order {order._id.slice(-8)} • {new Date(order.createdAt).toLocaleDateString()}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-6 mt-4 md:mt-0 w-full md:w-auto justify-between md:justify-end">
+                                                            <span className="font-bold text-primary">₹{order.totalPrice?.toFixed(2)}</span>
+                                                            <button
+                                                                onClick={() => setActiveTab('orders')}
+                                                                className="text-xs text-accent uppercase font-bold tracking-wider hover:text-primary transition-colors"
+                                                            >
+                                                                Track
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <h4 className="font-bold text-primary text-sm">{order.items}</h4>
-                                                        <p className="text-xs text-text-secondary">Order {order.id} • {order.date}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-6 mt-4 md:mt-0 w-full md:w-auto justify-between md:justify-end">
-                                                    <span className="font-bold text-primary">{order.amount}</span>
-                                                    <button
-                                                        onClick={() => setActiveTab('orders')}
-                                                        className="text-xs text-accent uppercase font-bold tracking-wider hover:text-primary transition-colors"
-                                                    >
-                                                        Details
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <p className="text-text-secondary text-center py-8">No orders yet. Start shopping!</p>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -317,43 +350,93 @@ const Account = () => {
                                     <p className="text-text-secondary text-sm font-light mt-1">Track your shipment status and order history.</p>
                                 </div>
 
-                                <div className="space-y-6">
-                                    {orders.map((order) => (
-                                        <div key={order.id} className="border border-secondary/10 p-6 rounded-sm bg-background hover:shadow-md transition-shadow">
-                                            <div className="flex flex-col md:flex-row justify-between mb-4">
-                                                <div>
-                                                    <div className="flex items-center gap-3">
-                                                        <h3 className="font-heading text-xl font-bold text-primary">{order.id}</h3>
-                                                        <span className={`text-xs px-2 py-0.5 rounded-full ${order.status === 'Delivered' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                                                            {order.status}
-                                                        </span>
+                                {orders.length > 0 ? (
+                                    <div className="space-y-6">
+                                        {orders.map((order) => {
+                                            const statusInfo = getOrderStatusInfo(order.status);
+                                            return (
+                                                <div key={order._id} className="border border-secondary/10 p-6 rounded-sm bg-background hover:shadow-md transition-shadow">
+                                                    <div className="flex flex-col md:flex-row justify-between mb-4">
+                                                        <div>
+                                                            <div className="flex items-center gap-3">
+                                                                <h3 className="font-heading text-lg font-bold text-primary">#{order._id.slice(-8)}</h3>
+                                                                <span className={`text-xs px-2 py-1 rounded-full bg-${statusInfo.color}-100 text-${statusInfo.color}-800 font-bold`}>
+                                                                    {order.status}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-text-secondary mt-1">Placed on {new Date(order.createdAt).toLocaleDateString()}</p>
+                                                        </div>
+                                                        <div className="text-right mt-2 md:mt-0">
+                                                            <p className="font-bold text-primary text-xl">₹{order.totalPrice?.toFixed(2)}</p>
+                                                            <p className="text-xs text-text-secondary">{order.orderItems?.length || 0} item(s)</p>
+                                                        </div>
                                                     </div>
-                                                    <p className="text-xs text-text-secondary mt-1">Placed on {order.date}</p>
-                                                </div>
-                                                <div className="text-right mt-2 md:mt-0">
-                                                    <p className="font-bold text-primary text-lg">{order.amount}</p>
-                                                </div>
-                                            </div>
 
-                                            <div className="flex items-start gap-4 py-4 border-t border-secondary/10 border-b">
-                                                <div className="w-16 h-16 bg-gray-100 rounded-sm flex-shrink-0">
-                                                    {/* Placeholder for product img */}
-                                                </div>
-                                                <div>
-                                                    <p className="font-medium text-primary">{order.items}</p>
-                                                    <p className="text-sm text-text-secondary">Quantity: {order.qty}</p>
-                                                </div>
-                                            </div>
+                                                    {/* Order Tracking Timeline */}
+                                                    <div className="my-6 py-6 border-y border-secondary/10">
+                                                        <p className="text-xs font-bold uppercase text-text-secondary mb-4 tracking-wider">Order Progress</p>
+                                                        <div className="flex items-center justify-between relative">
+                                                            {/* Progress Line */}
+                                                            <div className="absolute top-5 left-0 right-0 h-1 bg-secondary/10">
+                                                                <div
+                                                                    className="h-full bg-primary transition-all duration-500"
+                                                                    style={{ width: `${((statusInfo.step - 1) / 3) * 100}%` }}
+                                                                />
+                                                            </div>
 
-                                            <div className="flex justify-between items-center mt-4">
-                                                <button className="text-xs text-text-secondary hover:text-primary underline">Download Invoice</button>
-                                                <button className="bg-primary text-surface px-4 py-2 text-xs font-medium uppercase tracking-widest hover:bg-accent hover:text-primary transition-colors rounded-sm">
-                                                    Track Order
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                                            {/* Steps */}
+                                                            {['Pending', 'Approved', 'Packed', 'Shipped'].map((status, idx) => {
+                                                                const stepInfo = getOrderStatusInfo(status);
+                                                                const isComplete = statusInfo.step > idx + 1;
+                                                                const isCurrent = statusInfo.step === idx + 1;
+                                                                const StepIcon = stepInfo.icon;
+
+                                                                return (
+                                                                    <div key={status} className="flex flex-col items-center relative z-10">
+                                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-all ${isComplete ? 'bg-primary text-white' :
+                                                                            isCurrent ? 'bg-primary text-white animate-pulse' :
+                                                                                'bg-secondary/10 text-text-secondary'
+                                                                            }`}>
+                                                                            <StepIcon size={18} />
+                                                                        </div>
+                                                                        <p className={`text-xs font-medium text-center ${isComplete || isCurrent ? 'text-primary' : 'text-text-secondary'
+                                                                            }`}>
+                                                                            {stepInfo.label}
+                                                                        </p>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Order Items */}
+                                                    <div className="space-y-3 mb-4">
+                                                        {order.orderItems?.map((item, idx) => (
+                                                            <div key={idx} className="flex items-start gap-4 py-3 border-b border-secondary/5 last:border-0">
+                                                                <div className="w-12 h-12 bg-surface rounded-sm flex-shrink-0 border border-secondary/10 p-1">
+                                                                    <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                                                                </div>
+                                                                <div className="flex-grow">
+                                                                    <p className="font-medium text-primary text-sm">{item.name}</p>
+                                                                    <p className="text-xs text-text-secondary">Qty: {item.quantity} × ₹{item.price}</p>
+                                                                </div>
+                                                                <p className="font-bold text-primary">₹{(item.quantity * item.price).toFixed(2)}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-12">
+                                        <Package size={48} className="mx-auto text-secondary/30 mb-4" />
+                                        <p className="text-text-secondary mb-4">No orders yet</p>
+                                        <Link to="/shop" className="text-accent underline hover:text-primary">Start Shopping</Link>
+                                    </div>
+                                )}
                             </div>
                         )}
 
