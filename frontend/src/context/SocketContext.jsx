@@ -10,12 +10,12 @@ export const SocketProvider = ({ children }) => {
     const [activeUsers, setActiveUsers] = useState(0);
 
     useEffect(() => {
-        // Connect to the backend
-        // In development, it's localhost:5000, in prod it's the relative path or env var
-        const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        // Connect to the backend Socket.io server
+        const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
         const newSocket = io(socketUrl, {
-            withCredentials: true
+            withCredentials: true,
+            transports: ['websocket', 'polling']
         });
 
         setSocket(newSocket);
