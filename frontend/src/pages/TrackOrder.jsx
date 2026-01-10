@@ -1,19 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Package, CheckCircle, Truck, Clock, MapPin } from 'lucide-react';
 import client from '../api/client';
+import { useSearchParams } from 'react-router-dom';
 
 const TrackOrder = () => {
+    const [searchParams] = useSearchParams();
     const [orderId, setOrderId] = useState('');
     const [order, setOrder] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    const handleTrack = async (e) => {
-        e.preventDefault();
+    const fetchOrder = async (id) => {
         setLoading(true);
         setError(null);
         try {
-            const { data } = await client.get(`/orders/track/${orderId}`);
+            const { data } = await client.get(`/orders/track/${id}`);
             setOrder(data);
         } catch (err) {
             console.error(err);
@@ -21,6 +22,21 @@ const TrackOrder = () => {
             setOrder(null);
         } finally {
             setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        const queryOrderId = searchParams.get('orderId');
+        if (queryOrderId) {
+            setOrderId(queryOrderId);
+            fetchOrder(queryOrderId);
+        }
+    }, [searchParams]);
+
+    const handleTrack = (e) => {
+        e.preventDefault();
+        if (orderId) {
+            fetchOrder(orderId);
         }
     };
 
@@ -140,22 +156,6 @@ const TrackOrder = () => {
                             </div>
                         </div>
 
-                        {/* Order Details Preview */}
-                        <div className="mt-12 bg-secondary/5 p-6 rounded-sm">
-                            <h3 className="font-bold text-lg mb-4">Order Summary</h3>
-                            <div className="space-y-3">
-                                {order.orderItems.map((item, idx) => (
-                                    <div key={idx} className="flex justify-between items-center text-sm">
-                                        <span className="text-text-secondary">{item.quantity} x {item.name}</span>
-                                        <span className="font-medium">₹{item.price * item.quantity}</span>
-                                    </div>
-                                ))}
-                                <div className="border-t border-secondary/10 pt-3 flex justify-between items-center font-bold text-lg mt-3">
-                                    <span>Total</span>
-                                    <span>₹{order.totalPrice}</span>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 )}
             </div>

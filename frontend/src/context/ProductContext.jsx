@@ -10,13 +10,11 @@ export const useProducts = () => {
 
 export const ProductProvider = ({ children }) => {
     const [products, setProducts] = useState([]);
-    // Keep internal state for home content for now, or move to DB later
-    const [homeContent, setHomeContent] = useState(() => {
-        const savedContent = localStorage.getItem('homeContent');
-        return savedContent ? JSON.parse(savedContent) : {
-            subheading: "Curated Excellence",
-            heading: "Signature Collection"
-        };
+    // Keep internal state for home content, defaults until fetched
+    const [homeContent, setHomeContent] = useState({
+        subheading: "Curated Excellence",
+        heading: "Signature Collection",
+        signatureProducts: []
     });
 
     const fetchProducts = async () => {
@@ -29,7 +27,17 @@ export const ProductProvider = ({ children }) => {
     };
 
     useEffect(() => {
+        const fetchHomeContent = async () => {
+            try {
+                const { data } = await client.get('/settings/home');
+                if (data) setHomeContent(data);
+            } catch (error) {
+                console.error("Failed to fetch home content", error);
+            }
+        };
+
         fetchProducts();
+        fetchHomeContent();
     }, []);
 
     const addProduct = async (newProduct) => {
@@ -60,9 +68,29 @@ export const ProductProvider = ({ children }) => {
         }
     };
 
-    const updateHomeContent = (newContent) => {
-        setHomeContent(prev => ({ ...prev, ...newContent }));
-        localStorage.setItem('homeContent', JSON.stringify({ ...homeContent, ...newContent }));
+    const searchProducts = async (params = {}) => {
+        try {
+            const query = new URLSearchParams(params).toString();
+            const { data } = await client.get(`/products?${query}`);
+            return data;
+        } catch (error) {
+            console.error("Failed to search products", error);
+            return [];
+        }
+    };
+
+    const updateHomeContent = async (newContent) => {
+        try {
+            // Optimistic update
+            const updated = { ...homeContent, ...newContent };
+            setHomeContent(updated);
+
+            // Persist to DB
+            await client.put('/settings/home', updated);
+        } catch (error) {
+            console.error("Failed to update home content", error);
+            // Revert or alert if needed
+        }
     };
 
     return (
@@ -70,7 +98,9 @@ export const ProductProvider = ({ children }) => {
             products,
             addProduct,
             updateProduct,
+            updateProduct,
             deleteProduct,
+            searchProducts,
             homeContent,
             updateHomeContent
         }}>

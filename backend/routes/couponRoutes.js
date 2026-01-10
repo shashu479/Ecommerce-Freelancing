@@ -8,7 +8,7 @@ const { protect, admin } = require('../middleware/authMiddleware');
 // @access  Private/Admin
 router.post('/', protect, admin, async (req, res) => {
     try {
-        const { code, discountType, discountValue, assignedTo, expiryDate } = req.body;
+        const { code, discountType, discountValue, assignedTo, expiryDate, maxUses } = req.body;
 
         const couponExists = await Coupon.findOne({ code });
         if (couponExists) {
@@ -20,7 +20,8 @@ router.post('/', protect, admin, async (req, res) => {
             discountType,
             discountValue,
             assignedTo: assignedTo || null,
-            expiryDate
+            expiryDate,
+            maxUses: maxUses || 1
         });
 
         res.status(201).json(coupon);
@@ -99,6 +100,10 @@ router.post('/validate', protect, async (req, res) => {
 
         if (coupon.expiryDate && new Date() > coupon.expiryDate) {
             return res.status(400).json({ message: 'Coupon has expired' });
+        }
+
+        if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
+            return res.status(400).json({ message: 'Coupon usage limit reached' });
         }
 
         // Check user assignment

@@ -41,4 +41,38 @@
     .text-shadow-sm {
         text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
     }
+
+    /* Custom Scrollbar Styles */
+    .scrollbar-thin::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .scrollbar-thumb-primary\/30::-webkit-scrollbar-thumb {
+        background-color: rgba(15, 61, 46, 0.3);
+        border-radius: 3px;
+    }
+
+    .scrollbar-thumb-primary\/30:hover::-webkit-scrollbar-thumb,
+    .hover\:scrollbar-thumb-primary\/50:hover::-webkit-scrollbar-thumb {
+        background-color: rgba(15, 61, 46, 0.5);
+    }
+
+    .scrollbar-track-transparent::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    /* For Firefox */
+    .scrollbar-thin {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(15, 61, 46, 0.3) transparent;
+    }
+
+    .scrollbar-thin:hover {
+        scrollbar-color: rgba(15, 61, 46, 0.5) transparent;
+    }
 }

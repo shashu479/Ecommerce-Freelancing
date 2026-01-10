@@ -4,12 +4,14 @@ import client from '../api/client';
 import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrderContext';
 import { useAuth } from '../context/AuthContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { Trash2, Plus, Minus, ArrowRight, ShoppingBag } from 'lucide-react';
 
 const Cart = () => {
     const { cartItems, removeFromCart, updateQuantity, getCartTotal, clearCart } = useCart();
     const { createOrder } = useOrders();
     const { user } = useAuth();
+    const { formatPrice } = useCurrency();
     const navigate = useNavigate();
 
     const [couponCode, setCouponCode] = useState('');
@@ -80,47 +82,15 @@ const Cart = () => {
         setCouponCode('');
     };
 
-    const handleCheckout = async () => {
+    const handleCheckout = () => {
         if (cartItems.length === 0) return;
 
         if (!user) {
-            navigate('/login');
+            navigate('/login?redirect=cart');
             return;
         }
 
-        const orderItems = cartItems.map(item => ({
-            name: item.name,
-            quantity: item.quantity,
-            image: item.image,
-            price: item.price,
-            product: item._id || item.id // Ensure we pass the ID as 'product'
-        }));
-
-        const finalTotal = Math.max(0, getCartTotal() - discount.amount);
-
-        const orderData = {
-            orderItems,
-            shippingAddress: {
-                address: '123 Main St', // Placeholder until address form is implemented
-                city: 'City',
-                postalCode: '00000',
-                country: 'Country'
-            },
-            paymentMethod: 'COD',
-            itemsPrice: getCartTotal(), // Required by backend schema?
-            taxPrice: 0, // Placeholder
-            shippingPrice: 0, // Placeholder
-            totalPrice: finalTotal,
-        };
-
-        try {
-            const newOrder = await createOrder(orderData);
-            alert(`Order Placed Successfully! Order ID: ${newOrder._id}`);
-            clearCart();
-            setDiscount({ amount: 0, code: '' });
-        } catch (error) {
-            alert('Failed to place order.');
-        }
+        navigate('/checkout', { state: { discount } });
     };
 
     if (cartItems.length === 0) {
@@ -198,11 +168,11 @@ const Cart = () => {
                                         {/* Price */}
                                         <div className="text-right">
                                             <p className="text-lg font-bold text-primary">
-                                                {item.currency}{(item.price * item.quantity).toFixed(2)}
+                                                {formatPrice(item.price * item.quantity)}
                                             </p>
                                             {item.quantity > 1 && (
                                                 <p className="text-xs text-text-secondary">
-                                                    {item.currency}{item.price} each
+                                                    {formatPrice(item.price)} each
                                                 </p>
                                             )}
                                         </div>
@@ -229,7 +199,7 @@ const Cart = () => {
                             <div className="space-y-4 mb-6 text-sm text-text-secondary">
                                 <div className="flex justify-between">
                                     <span>Subtotal</span>
-                                    <span className="text-primary font-bold">₹{currentTotal.toFixed(2)}</span>
+                                    <span className="text-primary font-bold">{formatPrice(currentTotal)}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span>Shipping</span>
@@ -237,7 +207,7 @@ const Cart = () => {
                                 </div>
                                 <div className="flex justify-between">
                                     <span>Tax (Included)</span>
-                                    <span className="text-primary">₹{(currentTotal * 0.18).toFixed(2)}</span>
+                                    <span className="text-primary">{formatPrice(currentTotal * 0.18)}</span>
                                 </div>
 
                                 {/* Discount Section */}
@@ -247,7 +217,7 @@ const Cart = () => {
                                             <span>Discount ({discount.code})</span>
                                             <button onClick={handleRemoveCoupon} className="text-xs underline text-red-500">Remove</button>
                                         </div>
-                                        <span>-₹{discount.amount.toFixed(2)}</span>
+                                        <span>-{formatPrice(discount.amount)}</span>
                                     </div>
                                 )}
                             </div>
@@ -301,7 +271,7 @@ const Cart = () => {
                             <div className="border-t border-secondary/10 pt-6 mb-8">
                                 <div className="flex justify-between items-center">
                                     <span className="font-heading text-xl font-bold text-primary">Total</span>
-                                    <span className="font-heading text-2xl font-bold text-accent">₹{finalTotal.toFixed(2)}</span>
+                                    <span className="font-heading text-2xl font-bold text-accent">{formatPrice(finalTotal)}</span>
                                 </div>
                             </div>
 

@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useProducts } from '../context/ProductContext';
-import { Star, ShoppingBag, Truck, ShieldCheck, Leaf, ArrowRight, Minus, Plus, Heart, Share2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useCurrency } from '../context/CurrencyContext';
+import { ShoppingBag, Truck, ShieldCheck, Leaf, ArrowRight, Minus, Plus, Heart, Share2 } from 'lucide-react';
 
 const ProductDetails = () => {
     const { slug } = useParams();
     const { addToCart } = useCart();
     const { products } = useProducts();
+    const { toggleWishlist, user } = useAuth();
+    const { formatPrice } = useCurrency();
     const [product, setProduct] = useState(null);
     const [quantity, setQuantity] = useState(1);
     const [activeTab, setActiveTab] = useState('description');
@@ -17,10 +21,13 @@ const ProductDetails = () => {
             const found = products.find(p => p.slug === slug);
             if (found) {
                 setProduct(found);
+                setActiveImage(found.image);
                 window.scrollTo(0, 0);
             }
         }
     }, [slug, products]);
+
+    const [activeImage, setActiveImage] = useState(null);
 
     if (!product) {
         return <div className="min-h-screen flex items-center justify-center pt-20">Loading...</div>;
@@ -28,20 +35,33 @@ const ProductDetails = () => {
 
     // Recommendation Logic: Same category, excluding current
     const recommendations = products
-        .filter(p => p.category === product.category && p.id !== product.id)
+        .filter(p => p.category === product.category && (p._id || p.id) !== (product._id || product.id))
         .slice(0, 4);
 
     // If not enough same category, fill with others
     if (recommendations.length < 3) {
         const others = products
-            .filter(p => p.category !== product.category && p.id !== product.id)
+            .filter(p => p.category !== product.category && (p._id || p.id) !== (product._id || product.id))
             .slice(0, 4 - recommendations.length);
         recommendations.push(...others);
     }
 
 
+    const isWishlisted = user?.wishlist?.some(item => (typeof item === 'object' ? item._id : item) === product._id);
+
+    const handleWishlistClick = async () => {
+        if (!user) {
+            alert('Please login to add items to your wishlist.');
+            return;
+        }
+        await toggleWishlist(product._id);
+    };
+
+    const productImages = [product.image, product.image2].filter(Boolean);
+
     return (
         <div className="bg-background min-h-screen pt-24 pb-16 font-body text-text-primary">
+            {/* ... breadcrumbs ... */}
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
                 {/* Breadcrumbs */}
@@ -54,26 +74,32 @@ const ProductDetails = () => {
                 </nav>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
-                    {/* Product Image Gallery (Simple for now) */}
+                    {/* Product Image Gallery */}
                     <div className="space-y-4">
                         <div className="bg-surface border border-secondary/10 rounded-sm overflow-hidden aspect-square flex items-center justify-center p-8 relative group">
                             <span className="absolute top-4 left-4 bg-accent text-primary text-xs font-bold px-3 py-1 uppercase tracking-widest z-10">
                                 {product.tag}
                             </span>
                             <img
-                                src={product.image}
+                                src={activeImage || product.image}
                                 alt={product.name}
                                 className="w-full h-full object-contain transform group-hover:scale-105 transition-transform duration-500"
                             />
                         </div>
-                        {/* Thumbnails (Mockup) */}
-                        <div className="grid grid-cols-4 gap-4">
-                            {[0, 1, 2, 3].map((i) => (
-                                <button key={i} className={`aspect-square bg-surface border rounded-sm p-2 ${i === 0 ? 'border-primary' : 'border-secondary/10 hover:border-primary/50'}`}>
-                                    <img src={product.image} alt="" className="w-full h-full object-contain" />
-                                </button>
-                            ))}
-                        </div>
+                        {/* Thumbnails */}
+                        {productImages.length > 0 && (
+                            <div className="grid grid-cols-4 gap-4">
+                                {productImages.map((img, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => setActiveImage(img)}
+                                        className={`aspect-square bg-surface border rounded-sm p-2 ${activeImage === img ? 'border-primary' : 'border-secondary/10 hover:border-primary/50'}`}
+                                    >
+                                        <img src={img} alt="" className="w-full h-full object-contain" />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Product Info */}
@@ -83,22 +109,15 @@ const ProductDetails = () => {
                         </h1>
 
                         <div className="flex items-center gap-4 mb-6">
-                            <div className="flex text-accent">
-                                {[...Array(5)].map((_, i) => (
-                                    <Star key={i} size={18} fill={i < Math.floor(product.rating) ? "currentColor" : "none"} className={i < Math.floor(product.rating) ? "text-accent" : "text-gray-300"} />
-                                ))}
-                            </div>
-                            <span className="text-text-secondary text-sm">({product.reviews} reviews)</span>
-                            <span className="text-secondary/20">|</span>
                             <span className="text-emerald-600 text-sm font-medium flex items-center gap-1">
                                 <ShieldCheck size={16} /> Certified Organic
                             </span>
                         </div>
 
                         <div className="text-3xl font-bold text-primary mb-6">
-                            {product.currency}{product.price.toFixed(2)}
+                            {formatPrice(product.price)}
                             <span className="text-base font-normal text-text-secondary ml-2 line-through opacity-70">
-                                {product.currency}{(product.price * 1.2).toFixed(2)}
+                                {formatPrice(product.price * 1.2)}
                             </span>
                         </div>
 
@@ -127,8 +146,12 @@ const ProductDetails = () => {
                                 onClick={() => addToCart(product, quantity)}>
                                 Add to Cart <ShoppingBag size={18} />
                             </button>
-                            <button className="p-3 border border-secondary/20 rounded-sm hover:border-accent hover:text-accent transition-colors group" title="Add to Wishlist">
-                                <Heart size={20} className="group-hover:fill-current" />
+                            <button
+                                onClick={handleWishlistClick}
+                                className={`p-3 border rounded-sm transition-colors group ${isWishlisted ? 'border-accent text-accent' : 'border-secondary/20 hover:border-accent hover:text-accent'}`}
+                                title={isWishlisted ? "Remove from Wishlist" : "Add to Wishlist"}
+                            >
+                                <Heart size={20} className={isWishlisted ? "fill-current" : "group-hover:fill-current"} />
                             </button>
                         </div>
 
@@ -197,23 +220,51 @@ const ProductDetails = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                         {recommendations.map((rec) => (
-                            <Link to={`/product/${rec.slug}`} key={rec.id} className="group flex flex-col">
-                                <div className="bg-surface rounded-sm overflow-hidden border border-secondary/10 relative aspect-[4/5] mb-4">
+                            <div key={rec.id || rec._id} className="group flex flex-col relative">
+                                <Link to={`/product/${rec.slug}`} className="block bg-surface rounded-sm overflow-hidden border border-secondary/10 relative aspect-[4/5] mb-4">
                                     <img
                                         src={rec.image}
                                         alt={rec.name}
                                         className="w-full h-full object-contain p-6 transform group-hover:scale-110 transition-transform duration-700"
                                     />
                                     <div className="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-300"></div>
-                                </div>
-                                <h3 className="font-heading text-lg font-bold text-primary group-hover:text-accent transition-colors mb-1">
-                                    {rec.name}
-                                </h3>
+
+                                    {/* Wishlist Button */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            toggleWishlist(rec._id || rec.id);
+                                        }}
+                                        className="absolute top-3 right-3 z-20 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0"
+                                    >
+                                        <Heart
+                                            size={16}
+                                            className={user?.wishlist?.some(item => (typeof item === 'object' ? item._id : item) === (rec._id || rec.id)) ? "fill-current" : ""}
+                                        />
+                                    </button>
+
+                                    {/* Quick Add Button */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            addToCart(rec);
+                                        }}
+                                        className="absolute bottom-3 right-3 z-20 w-8 h-8 flex items-center justify-center bg-primary text-white rounded-full shadow-md hover:bg-accent hover:text-primary opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0"
+                                        title="Add to Cart"
+                                    >
+                                        <ShoppingBag size={14} />
+                                    </button>
+                                </Link>
+                                <Link to={`/product/${rec.slug}`}>
+                                    <h3 className="font-heading text-lg font-bold text-primary group-hover:text-accent transition-colors mb-1">
+                                        {rec.name}
+                                    </h3>
+                                </Link>
                                 <div className="flex items-baseline justify-between mt-auto">
                                     <span className="text-text-secondary text-sm font-light truncate pr-4">{rec.category}</span>
-                                    <span className="font-medium text-primary">{rec.currency}{rec.price}</span>
+                                    <span className="font-medium text-primary">{formatPrice(rec.price)}</span>
                                 </div>
-                            </Link>
+                            </div>
                         ))}
                     </div>
                 </div>
