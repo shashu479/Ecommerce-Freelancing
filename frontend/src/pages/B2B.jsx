@@ -1,233 +1,425 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Container, Globe, Truck, Package, FileText, Send } from 'lucide-react';
+import { Container, Globe, Truck, Package, FileText, Send, Calculator, Download, Users, CheckCircle, ArrowRight } from 'lucide-react';
 import BgImage1 from '../assets/bgimage1.png';
+import { useCurrency } from '../context/CurrencyContext';
 
 import client from '../api/client';
 
 const B2B = () => {
-    const [formData, setFormData] = useState({
+    const { formatPrice } = useCurrency();
+    const [activeTab, setActiveTab] = useState('inquiry'); // inquiry, distributor, sample
+    const [pricingQuantity, setPricingQuantity] = useState(10);
+    const [selectedPricingProduct, setSelectedPricingProduct] = useState('');
+    const [pricingProducts, setPricingProducts] = useState({});
+    const [exportDocs, setExportDocs] = useState([]);
+
+    const [loadingSettings, setLoadingSettings] = useState(true);
+
+    // Fetch B2B Settings
+    React.useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const { data } = await client.get('/b2b/settings');
+                // Backend sends pricingProducts as array of objects {name, price}
+                const pProducts = {};
+                if (data.pricingProducts && data.pricingProducts.length > 0) {
+                    data.pricingProducts.forEach(p => pProducts[p.name] = p.price);
+                    setSelectedPricingProduct(data.pricingProducts[0].name);
+                }
+                setPricingProducts(pProducts);
+                setExportDocs(data.exportDocs || []);
+            } catch (error) {
+                console.error("Failed to fetch B2B settings", error);
+            } finally {
+                setLoadingSettings(false);
+            }
+        };
+        fetchSettings();
+    }, []);
+
+    // Form States
+    const [inquiryForm, setInquiryForm] = useState({
         companyName: '',
         contactPerson: '',
         email: '',
         phone: '',
-        productInterest: [], // Changed to array for multiple selections
+        productInterest: [],
         quantity: '',
         destination: '',
         message: ''
     });
 
-    const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
-    };
+    const [distributorForm, setDistributorForm] = useState({
+        businessName: '',
+        contactName: '',
+        email: '',
+        region: '',
+        yearsInBusiness: '',
+        annualTurnover: '',
+        message: ''
+    });
 
-    const handleProductChange = (e) => {
+    const [sampleForm, setSampleForm] = useState({
+        companyName: '',
+        contactName: '',
+        address: '',
+        shippingAccount: '', // DHL/FedEx etc
+        items: []
+    });
+
+    const handleInquiryChange = (e) => setInquiryForm({ ...inquiryForm, [e.target.name]: e.target.value });
+    const handleDistributorChange = (e) => setDistributorForm({ ...distributorForm, [e.target.name]: e.target.value });
+    const handleSampleChange = (e) => setSampleForm({ ...sampleForm, [e.target.name]: e.target.value });
+
+    const handleProductInterestChange = (e, formType) => {
         const { value, checked } = e.target;
-        const { productInterest } = formData;
+        const form = formType === 'inquiry' ? inquiryForm : sampleForm;
+        const setForm = formType === 'inquiry' ? setInquiryForm : setSampleForm;
+        const field = formType === 'inquiry' ? 'productInterest' : 'items';
 
         if (checked) {
-            setFormData({ ...formData, productInterest: [...productInterest, value] });
+            setForm({ ...form, [field]: [...form[field], value] });
         } else {
-            setFormData({ ...formData, productInterest: productInterest.filter(p => p !== value) });
+            setForm({ ...form, [field]: form[field].filter(p => p !== value) });
         }
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const submitForm = async (endpoint, data, resetFn) => {
         try {
-            await client.post('/inquiries', formData);
-            alert('Thank you for your inquiry. Our team will contact you shortly.');
-            setFormData({
-                companyName: '',
-                contactPerson: '',
-                email: '',
-                phone: '',
-                productInterest: [],
-                quantity: '',
-                destination: '',
-                message: ''
-            });
+            await client.post(endpoint, data);
+            alert('Request submitted successfully! Our team will review and contact you shortly.');
+            resetFn();
         } catch (error) {
             console.error('Submission failed', error);
-            alert('Failed to submit inquiry. Please try again.');
+            alert('Submission failed. Please try again later.');
         }
     };
 
+    // Bulk Pricing Logic with improved tiered discounts
+    const calculateBulkPrice = (qty) => {
+        const basePrice = pricingProducts[selectedPricingProduct] || 2500; // Base price per kg
+        let discount = 0;
+
+        // More granular discount tiers
+        if (qty >= 100) discount = 0.30;      // 20% off for 100+ kg
+        else if (qty >= 50) discount = 0.15;  // 15% off for 50-99 kg
+        else if (qty >= 20) discount = 0.18;  // 12% off for 20-49 kg
+        else if (qty >= 10) discount = 0.10;  // 8% off for 10-19 kg
+        else if (qty >= 5) discount = 0.8;   // 5% off for 5-9 kg
+
+        const discountedPrice = basePrice * (1 - discount);
+        const total = discountedPrice * qty;
+        const savings = (basePrice * qty) - total;
+
+        return { pricePerUnit: discountedPrice, total, savings, discount: discount * 100 };
+    };
+
+    const bulkCalculation = calculateBulkPrice(pricingQuantity);
+
     return (
-        <div className="w-full pt-20">
+        <div className="w-full pt-20 bg-background text-primary">
             {/* Hero Section */}
-            <div className="relative h-64 md:h-80 flex items-center justify-center overflow-hidden">
+            <div className="relative h-72 md:h-96 flex items-center justify-center overflow-hidden">
                 <div className="absolute inset-0">
                     <img src={BgImage1} alt="Global Trade" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-primary/80 mix-blend-multiply" />
+                    <div className="absolute inset-0 bg-primary/85 mix-blend-multiply" />
                 </div>
-                <div className="relative z-10 text-center space-y-4 animate-fade-in-up">
-                    <h1 className="font-heading text-4xl md:text-5xl text-surface font-bold tracking-wide">B2B & IMPORT/EXPORT</h1>
-                    <div className="flex items-center justify-center space-x-2 text-sm md:text-base text-surface/80 font-light">
+                <div className="relative z-10 text-center space-y-6 animate-fade-in-up px-4">
+                    <h1 className="font-heading text-4xl md:text-6xl text-surface font-bold tracking-tight">Enterprise & Wholesale</h1>
+                    <p className="text-surface/80 text-lg md:text-xl font-light max-w-2xl mx-auto">
+                        End-to-end B2B solutions: From bulk sourcing to global export logistics.
+                    </p>
+                    <div className="flex items-center justify-center space-x-2 text-sm text-surface/60 font-mono uppercase tracking-widest">
                         <Link to="/" className="hover:text-accent transition-colors">Home</Link>
                         <span>/</span>
-                        <span className="text-accent">B2B & Export</span>
+                        <span className="text-accent">B2B Solutions</span>
                     </div>
                 </div>
             </div>
 
-            {/* Introduction */}
-            <section className="py-16 md:py-24 px-4 max-w-7xl mx-auto text-center space-y-8">
-                <div className="max-w-4xl mx-auto">
-                    <span className="text-accent text-sm tracking-[0.2em] uppercase font-bold">Global Reach</span>
-                    <h2 className="font-heading text-3xl md:text-4xl text-primary font-bold mt-4 mb-6">Connecting Markets Worldwide</h2>
-                    <p className="text-text-secondary text-lg font-light leading-relaxed">
-                        Siraba Organic specializes in the global trade of premium organic spices. Whether you are a retailer, distributor, or manufacturer, we provide tailored B2B solutions to meet your specific needs. Our robust import/export infrastructure ensures seamless delivery across borders.
-                    </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left mt-12">
-                    <div className="p-8 border border-secondary/10 rounded-sm hover:shadow-lg transition-shadow duration-300">
-                        <Container size={32} className="text-accent mb-4" />
-                        <h3 className="font-heading text-xl font-bold text-primary mb-3">Bulk Orders</h3>
-                        <p className="text-text-secondary text-sm leading-relaxed">
-                            Competitive pricing for large-volume orders. We accommodate various packaging requirements, from bulk sacks to retail-ready packaging.
-                        </p>
+            {/* Feature Grid */}
+            <section className="py-16 px-4 max-w-7xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="bg-surface p-6 rounded-sm border border-secondary/10 hover:border-accent/50 transition-colors group">
+                        <div className="w-12 h-12 bg-primary/5 rounded-full flex items-center justify-center mb-4 group-hover:bg-accent/10 transition-colors">
+                            <Container className="text-primary group-hover:text-accent" size={24} />
+                        </div>
+                        <h3 className="font-heading font-bold text-lg mb-2">Bulk Pricing</h3>
+                        <p className="text-sm text-text-secondary">Tiered discounts for high-volume orders with transparent calculation.</p>
                     </div>
-                    <div className="p-8 border border-secondary/10 rounded-sm hover:shadow-lg transition-shadow duration-300">
-                        <Globe size={32} className="text-accent mb-4" />
-                        <h3 className="font-heading text-xl font-bold text-primary mb-3">Global Logistics</h3>
-                        <p className="text-text-secondary text-sm leading-relaxed">
-                            Expert handling of international shipping, customs documentation, and compliance with local import regulations in US, EU, and Asia.
-                        </p>
+                    <div className="bg-surface p-6 rounded-sm border border-secondary/10 hover:border-accent/50 transition-colors group">
+                        <div className="w-12 h-12 bg-primary/5 rounded-full flex items-center justify-center mb-4 group-hover:bg-accent/10 transition-colors">
+                            <Users className="text-primary group-hover:text-accent" size={24} />
+                        </div>
+                        <h3 className="font-heading font-bold text-lg mb-2">Distributor Network</h3>
+                        <p className="text-sm text-text-secondary">Join our global network of verified distributors and partners.</p>
                     </div>
-                    <div className="p-8 border border-secondary/10 rounded-sm hover:shadow-lg transition-shadow duration-300">
-                        <FileText size={32} className="text-accent mb-4" />
-                        <h3 className="font-heading text-xl font-bold text-primary mb-3">Private Labeling</h3>
-                        <p className="text-text-secondary text-sm leading-relaxed">
-                            Custom branding solutions ("White Label") available. Let us handle the production and quality while you focus on your brand.
-                        </p>
+                    <div className="bg-surface p-6 rounded-sm border border-secondary/10 hover:border-accent/50 transition-colors group">
+                        <div className="w-12 h-12 bg-primary/5 rounded-full flex items-center justify-center mb-4 group-hover:bg-accent/10 transition-colors">
+                            <FileText className="text-primary group-hover:text-accent" size={24} />
+                        </div>
+                        <h3 className="font-heading font-bold text-lg mb-2">Export Ready</h3>
+                        <p className="text-sm text-text-secondary">Full documentation support including Phyto, Origin, and Organic certs.</p>
+                    </div>
+                    <div className="bg-surface p-6 rounded-sm border border-secondary/10 hover:border-accent/50 transition-colors group">
+                        <div className="w-12 h-12 bg-primary/5 rounded-full flex items-center justify-center mb-4 group-hover:bg-accent/10 transition-colors">
+                            <Package className="text-primary group-hover:text-accent" size={24} />
+                        </div>
+                        <h3 className="font-heading font-bold text-lg mb-2">Sample Requests</h3>
+                        <p className="text-sm text-text-secondary">Quality assurance workflow with quick sample dispatching.</p>
                     </div>
                 </div>
             </section>
 
-            {/* Order Selection / Inquiry Form */}
-            <section className="bg-background py-20 px-4">
-                <div className="max-w-4xl mx-auto bg-surface shadow-xl rounded-sm p-8 md:p-12">
-                    <div className="text-center mb-10">
-                        <Package size={40} className="text-primary mx-auto mb-4" strokeWidth={1} />
-                        <h2 className="font-heading text-3xl text-primary font-bold">Trade Inquiry & Order Selection</h2>
-                        <p className="text-text-secondary mt-2 font-light">
-                            Tell us about your requirements, and we will provide a custom quote within 24 hours.
-                        </p>
+            {/* Main Interactive Section */}
+            <section className="bg-secondary/5 py-20 px-4">
+                <div className="max-w-6xl mx-auto">
+                    {/* Tabs */}
+                    <div className="flex flex-wrap justify-center mb-10 gap-4">
+                        <button
+                            onClick={() => setActiveTab('inquiry')}
+                            className={`px-8 py-3 text-sm font-bold uppercase tracking-wider rounded-sm transition-all shadow-sm ${activeTab === 'inquiry' ? 'bg-primary text-surface' : 'bg-surface text-text-secondary hover:bg-white'}`}
+                        >
+                            Trade Inquiry
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('distributor')}
+                            className={`px-8 py-3 text-sm font-bold uppercase tracking-wider rounded-sm transition-all shadow-sm ${activeTab === 'distributor' ? 'bg-primary text-surface' : 'bg-surface text-text-secondary hover:bg-white'}`}
+                        >
+                            Partner Onboarding
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('sample')}
+                            className={`px-8 py-3 text-sm font-bold uppercase tracking-wider rounded-sm transition-all shadow-sm ${activeTab === 'sample' ? 'bg-primary text-surface' : 'bg-surface text-text-secondary hover:bg-white'}`}
+                        >
+                            Request Samples
+                        </button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-primary font-medium">Company Name</label>
-                                <input
-                                    type="text"
-                                    name="companyName"
-                                    required
-                                    className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent transition-colors"
-                                    placeholder="e.g. Organic Foods Ltd"
-                                    onChange={handleChange}
-                                />
+                    <div className="bg-surface p-8 md:p-12 rounded-sm shadow-xl border border-secondary/10">
+                        {/* Trade Inquiry Form */}
+                        {activeTab === 'inquiry' && (
+                            <div className="animate-fade-in">
+                                <h2 className="font-heading text-2xl font-bold mb-6 text-center">General Trade Inquiry</h2>
+                                <form onSubmit={(e) => { e.preventDefault(); submitForm('/inquiries', inquiryForm, () => { }); }} className="space-y-6 max-w-3xl mx-auto">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <input type="text" name="companyName" placeholder="Company Name" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleInquiryChange} required />
+                                        <input type="text" name="contactPerson" placeholder="Contact Person" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleInquiryChange} required />
+                                        <input type="email" name="email" placeholder="Email Address" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleInquiryChange} required />
+                                        <input type="tel" name="phone" placeholder="Phone Number" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleInquiryChange} />
+                                    </div>
+
+                                    <div className="space-y-3 pt-4">
+                                        <label className="text-xs uppercase font-bold text-text-secondary">Products of Interest</label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {['Kashmiri Saffron', 'Organic Walnuts', 'Himalayan Shilajit', 'Asafoetida (Heeng)'].map(item => (
+                                                <label key={item} className="flex items-center space-x-3 cursor-pointer">
+                                                    <input type="checkbox" value={item} onChange={(e) => handleProductInterestChange(e, 'inquiry')} className="accent-accent" />
+                                                    <span className="text-sm">{item}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <input type="text" name="quantity" placeholder="Est. Quantity (e.g. 50kg)" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleInquiryChange} />
+                                        <input type="text" name="destination" placeholder="Destination Country" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleInquiryChange} required />
+                                    </div>
+
+                                    <textarea name="message" rows="4" placeholder="Additional details..." className="w-full p-3 bg-background border border-secondary/20 rounded-sm focus:border-accent outline-none" onChange={handleInquiryChange}></textarea>
+
+                                    <button type="submit" className="w-full bg-primary text-surface py-4 font-bold uppercase tracking-widest hover:bg-accent hover:text-primary transition-all">Submit Inquiry</button>
+                                </form>
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-primary font-medium">Contact Person</label>
-                                <input
-                                    type="text"
-                                    name="contactPerson"
-                                    required
-                                    className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent transition-colors"
-                                    placeholder="Your Full Name"
-                                    onChange={handleChange}
-                                />
+                        )}
+
+                        {/* Distributor Onboarding Form */}
+                        {activeTab === 'distributor' && (
+                            <div className="animate-fade-in">
+                                <h2 className="font-heading text-2xl font-bold mb-2 text-center">Become a Verified Distributor</h2>
+                                <p className="text-center text-text-secondary text-sm mb-8">Join our network and get access to exclusive pricing and priority support.</p>
+                                <form onSubmit={(e) => { e.preventDefault(); submitForm('/b2b/distributors', distributorForm, () => { }); }} className="space-y-6 max-w-3xl mx-auto">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <input type="text" name="businessName" placeholder="Legal Business Name" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleDistributorChange} required />
+                                        <input type="text" name="contactName" placeholder="Primary Contact" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleDistributorChange} required />
+                                        <input type="email" name="email" placeholder="Business Email" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleDistributorChange} required />
+                                        <input type="text" name="region" placeholder="Region / Territory of Operation" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleDistributorChange} required />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <input type="number" name="yearsInBusiness" placeholder="Years in Business" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleDistributorChange} />
+                                        <input type="text" name="annualTurnover" placeholder="Approx. Annual Turnover (USD)" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleDistributorChange} />
+                                    </div>
+                                    <textarea name="message" rows="4" placeholder="Tell us about your distribution channels..." className="w-full p-3 bg-background border border-secondary/20 rounded-sm focus:border-accent outline-none" onChange={handleDistributorChange}></textarea>
+                                    <button type="submit" className="w-full bg-primary text-surface py-4 font-bold uppercase tracking-widest hover:bg-accent hover:text-primary transition-all">Apply for Partnership</button>
+                                </form>
+                            </div>
+                        )}
+
+                        {/* Sample Request Form */}
+                        {activeTab === 'sample' && (
+                            <div className="animate-fade-in">
+                                <h2 className="font-heading text-2xl font-bold mb-2 text-center">Request Product Samples</h2>
+                                <p className="text-center text-text-secondary text-sm mb-8">Experience our quality before placing a bulk order. Shipping charges may apply.</p>
+                                <form onSubmit={(e) => { e.preventDefault(); submitForm('/b2b/samples', sampleForm, () => { }); }} className="space-y-6 max-w-3xl mx-auto">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <input type="text" name="companyName" placeholder="Company Name" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleSampleChange} required />
+                                        <input type="text" name="contactName" placeholder="Recipient Name" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleSampleChange} required />
+                                        <input type="text" name="shippingAccount" placeholder="Courier Account # (DHL/FedEx) - Optional" className="p-3 bg-transparent border-b border-secondary/20 focus:border-accent outline-none w-full" onChange={handleSampleChange} />
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="text-xs uppercase font-bold text-text-secondary">Select Samples Needed</label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {['Saffron (1g)', 'Walnut Kernels (50g)', 'Shilajit Resin (5g)', 'Asafoetida (10g)'].map(item => (
+                                                <label key={item} className="flex items-center space-x-3 cursor-pointer">
+                                                    <input type="checkbox" value={item} onChange={(e) => handleProductInterestChange(e, 'sample')} className="accent-accent" />
+                                                    <span className="text-sm">{item}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <textarea name="address" rows="3" placeholder="Full Shipping Address" className="w-full p-3 bg-background border border-secondary/20 rounded-sm focus:border-accent outline-none" onChange={handleSampleChange} required></textarea>
+                                    <button type="submit" className="w-full bg-primary text-surface py-4 font-bold uppercase tracking-widest hover:bg-accent hover:text-primary transition-all">Request Samples</button>
+                                </form>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </section>
+
+            {/* Tools Section: Calculator & Docs */}
+            <section className="py-20 px-4 max-w-7xl mx-auto">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+
+                    {/* Bulk Pricing Calculator */}
+                    <div className="bg-background border border-secondary/10 p-8 rounded-sm shadow-md">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Calculator className="text-accent" size={28} />
+                            <h2 className="font-heading text-2xl font-bold">Bulk Savings Calculator</h2>
+                        </div>
+                        <p className="text-text-secondary text-sm mb-6">Estimate your savings with our tiered pricing model.</p>
+
+                        <div className="mb-6">
+                            <label className="block text-xs uppercase font-bold text-text-secondary mb-2">Select Product for Calculation</label>
+                            <div className="relative">
+                                <select
+                                    value={selectedPricingProduct}
+                                    onChange={(e) => {
+                                        setSelectedPricingProduct(e.target.value);
+                                        // Reset quantity to 1 for better UX or keep as is? Let's keep it.
+                                    }}
+                                    className="w-full appearance-none bg-surface border border-secondary/20 rounded-sm p-3 text-sm focus:outline-none focus:border-accent cursor-pointer"
+                                >
+                                    {Object.keys(pricingProducts).map(product => (
+                                        <option key={product} value={product}>{product}</option>
+                                    ))}
+                                </select>
+                                <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-secondary">
+                                    <ArrowRight size={14} className="rotate-90" />
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-primary font-medium">Email Address</label>
+                        <div className="space-y-8">
+                            <div>
+                                <div className="flex justify-between mb-2">
+                                    <label className="font-bold text-sm">Quantity (KG)</label>
+                                    <span className="text-accent font-bold">{pricingQuantity} kg</span>
+                                </div>
                                 <input
-                                    type="email"
-                                    name="email"
-                                    required
-                                    className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent transition-colors"
-                                    placeholder="name@company.com"
-                                    onChange={handleChange}
+                                    type="range"
+                                    min="1"
+                                    max="200"
+                                    value={pricingQuantity}
+                                    onChange={(e) => setPricingQuantity(parseInt(e.target.value))}
+                                    className="w-full h-2 bg-secondary/20 rounded-lg appearance-none cursor-pointer accent-primary"
                                 />
+                                <div className="flex justify-between mt-1 text-xs text-text-secondary">
+                                    <span>1 kg</span>
+                                    <span>200 kg</span>
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-primary font-medium">Phone Number</label>
-                                <input
-                                    type="tel"
-                                    name="phone"
-                                    className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent transition-colors"
-                                    placeholder="+1 (555) 000-0000"
-                                    onChange={handleChange}
-                                />
+
+                            <div className="bg-secondary/5 p-6 rounded-sm space-y-4">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-text-secondary">Base Price (Per KG)</span>
+                                    <span>{formatPrice(pricingProducts[selectedPricingProduct] || 0)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-text-secondary">Discount Tier</span>
+                                    <span className="text-accent font-bold">{bulkCalculation.discount}% Off</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-text-secondary">Your Price (Per KG)</span>
+                                    <span className="font-bold">{formatPrice(bulkCalculation.pricePerUnit)}</span>
+                                </div>
+                                <div className="h-px bg-secondary/20 my-2"></div>
+                                <div className="flex justify-between text-lg font-bold text-primary">
+                                    <span>Est. Total</span>
+                                    <span>{formatPrice(bulkCalculation.total)}</span>
+                                </div>
+                                {bulkCalculation.savings > 0 && (
+                                    <div className="text-center text-xs text-white bg-green-600 py-1 rounded-sm mt-2">
+                                        You save {formatPrice(bulkCalculation.savings)} on this order!
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Discount Tier Guide */}
+                            <div className="mt-6 pt-6 border-t border-secondary/10">
+                                <p className="text-xs font-bold uppercase text-text-secondary mb-3">Volume Discount Tiers</p>
+                                <div className="space-y-2">
+                                    {[
+                                        { qty: '5-9 kg', discount: '5%', color: 'blue' },
+                                        { qty: '10-19 kg', discount: '8%', color: 'indigo' },
+                                        { qty: '20-49 kg', discount: '12%', color: 'purple' },
+                                        { qty: '50-99 kg', discount: '15%', color: 'pink' },
+                                        { qty: '100+ kg', discount: '20%', color: 'green' }
+                                    ].map((tier, idx) => (
+                                        <div key={idx} className={`flex items-center justify-between text-xs p-2 rounded-sm ${pricingQuantity >= parseInt(tier.qty)
+                                            ? `bg-${tier.color}-50 border border-${tier.color}-200`
+                                            : 'bg-secondary/5'
+                                            }`}>
+                                            <span className="font-medium text-primary">{tier.qty}</span>
+                                            <span className={`font-bold ${pricingQuantity >= parseInt(tier.qty)
+                                                ? `text-${tier.color}-700`
+                                                : 'text-text-secondary'
+                                                }`}>{tier.discount} OFF</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
+                    </div>
 
-                        {/* Updated Product Interest to Checkboxes */}
-                        <div className="space-y-3">
-                            <label className="text-xs uppercase tracking-wider text-primary font-medium block">Product Interest (Select all that apply)</label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {['Kashmiri Saffron (Mongra)', 'Heeng (Asafoetida)', 'Organic Walnuts', 'Other'].map((item) => (
-                                    <label key={item} className={`flex items-center space-x-3 p-3 border rounded-sm cursor-pointer transition-colors ${formData.productInterest.includes(item) ? 'bg-secondary/10 border-accent' : 'border-secondary/20 hover:bg-secondary/5'}`}>
-                                        <input
-                                            type="checkbox"
-                                            value={item}
-                                            checked={formData.productInterest.includes(item)}
-                                            onChange={handleProductChange}
-                                            className="accent-accent h-4 w-4"
-                                        />
-                                        <span className="text-sm text-text-primary font-light">{item}</span>
-                                    </label>
-                                ))}
-                            </div>
+                    {/* Export Documentation */}
+                    <div className="bg-background border border-secondary/10 p-8 rounded-sm shadow-md">
+                        <div className="flex items-center gap-3 mb-6">
+                            <FileText className="text-accent" size={28} />
+                            <h2 className="font-heading text-2xl font-bold">Export Documentation</h2>
+                        </div>
+                        <p className="text-text-secondary text-sm mb-8">We ensure compliance with global standards. Available documentation included with shipments:</p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {exportDocs.map((doc, idx) => (
+                                <div key={idx} className="flex items-center gap-3 p-3 border border-secondary/10 rounded-sm hover:bg-secondary/5 transition-colors">
+                                    <CheckCircle size={18} className="text-green-500 flex-shrink-0" />
+                                    <div>
+                                        <p className="font-bold text-sm text-primary">{doc.name}</p>
+                                        <span className="text-[10px] uppercase font-bold text-text-secondary bg-secondary/10 px-1.5 py-0.5 rounded-sm">{doc.type}</span>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-primary font-medium">Estimated Quantity</label>
-                                <input
-                                    type="text"
-                                    name="quantity"
-                                    className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent transition-colors"
-                                    placeholder="e.g. 5kg, 100 units"
-                                    onChange={handleChange}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs uppercase tracking-wider text-primary font-medium">Destination Country</label>
-                                <input
-                                    type="text"
-                                    name="destination"
-                                    required
-                                    className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent transition-colors"
-                                    placeholder="e.g. United States, Germany, UAE"
-                                    onChange={handleChange}
-                                />
-                            </div>
+                        <div className="mt-8 pt-6 border-t border-secondary/10">
+                            <button className="flex items-center justify-between w-full p-4 bg-primary text-surface rounded-sm hover:bg-accent hover:text-primary transition-all group">
+                                <span className="font-bold uppercase tracking-wider text-sm">Download Compliance Kit</span>
+                                <Download size={20} className="group-hover:translate-y-1 transition-transform" />
+                            </button>
                         </div>
+                    </div>
 
-                        <div className="space-y-2">
-                            <label className="text-xs uppercase tracking-wider text-primary font-medium">Additional Requirements</label>
-                            <textarea
-                                name="message"
-                                rows="4"
-                                className="w-full border border-secondary/20 bg-transparent p-3 focus:outline-none focus:border-accent transition-colors rounded-sm text-sm"
-                                placeholder="Please describe any specific packaging needs, certification requirements, or other questions..."
-                                onChange={handleChange}
-                            ></textarea>
-                        </div>
-
-                        <button
-                            type="submit"
-                            className="w-full bg-primary text-surface font-medium text-sm tracking-widest uppercase py-4 hover:bg-accent hover:text-primary transition-all duration-300 shadow-md flex items-center justify-center gap-2"
-                        >
-                            Request Quote <Send size={18} />
-                        </button>
-                    </form>
                 </div>
             </section>
         </div>

@@ -2,17 +2,69 @@ import React, { useState, useEffect } from 'react';
 import {
     LayoutDashboard, User, Package, MapPin,
     Heart, Settings, HelpCircle, LogOut, CheckCircle, Clock,
-    Lock, Mail, Truck, PackageCheck
+    Lock, Mail, Truck, PackageCheck, Phone, Star, X, CreditCard, ChevronDown, Filter, Search
 } from 'lucide-react';
+import client from '../api/client';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../context/OrderContext';
+import { useCurrency } from '../context/CurrencyContext';
+
+// Subcode for Wishlist Grid to handle fetching
+const WishlistGrid = () => {
+    const { fetchWishlist, toggleWishlist } = useAuth();
+    const { formatPrice } = useCurrency();
+    const [wishlistItems, setWishlistItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const loadWishlist = async () => {
+            const items = await fetchWishlist();
+            setWishlistItems(items);
+            setLoading(false);
+        };
+        loadWishlist();
+    }, [fetchWishlist]);
+
+    if (loading) return <div className="text-center text-xs text-text-secondary">Loading wishlist...</div>;
+
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {wishlistItems.map(item => (
+                <div key={item._id} className="border border-secondary/10 rounded-sm overflow-hidden bg-background group">
+                    <div className="relative h-48 bg-white p-4">
+                        <img src={item.image} alt={item.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" />
+                        <button
+                            onClick={async () => {
+                                await toggleWishlist(item._id);
+                                setWishlistItems(prev => prev.filter(i => i._id !== item._id));
+                            }}
+                            className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-red-500 hover:bg-red-50"
+                        >
+                            <Heart size={16} fill="currentColor" />
+                        </button>
+                    </div>
+                    <div className="p-4">
+                        <h4 className="font-bold text-primary truncate">{item.name}</h4>
+                        <p className="text-accent font-bold mt-1">{formatPrice(item.price)}</p>
+                        <Link to={`/product/${item._id}`} className="block text-center mt-3 text-xs font-bold uppercase tracking-wider text-text-secondary border border-secondary/20 py-2 rounded-sm hover:border-primary hover:text-primary transition-colors">
+                            View Product
+                        </Link>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
 
 const Account = () => {
-    const { user, login, register, logout, isAdmin } = useAuth();
+    const { user, login, register, logout, isAdmin, updateProfile } = useAuth();
     const { orders } = useOrders();
+    const { formatPrice } = useCurrency();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('dashboard');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [sortOrder, setSortOrder] = useState('newest'); // newest, oldest, price-high, price-low
 
     // Redirect admin users to admin dashboard
     useEffect(() => {
@@ -35,7 +87,10 @@ const Account = () => {
     const userProfile = {
         name: user?.name || "Guest User",
         email: user?.email || "guest@example.com",
-        phone: "+91 98765 43210", // Placeholder as backend doesn't have phone yet
+        phone: "+91 98765 43210", // Placeholder
+        altPhone: "+91 98989 89898", // Placeholder
+        dob: "1995-08-15", // Placeholder
+        gender: "Male", // Placeholder
         address: "B-45, Greater Kailash I, New Delhi", // Placeholder
         country: "India", // Placeholder
         loyaltyPoints: 120 // Placeholder
@@ -53,6 +108,127 @@ const Account = () => {
         return statusMap[status] || statusMap['Pending'];
     };
 
+    // Address Form State
+    const [isAddingAddress, setIsAddingAddress] = useState(false);
+    const [newAddress, setNewAddress] = useState({
+        address: '',
+        city: '',
+        state: '',
+        postalCode: '',
+        country: 'India',
+        phone: ''
+    });
+
+
+
+    const handleAddressSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            // Create updated addresses array
+            const updatedAddresses = [...(user.addresses || []), { ...newAddress, isDefault: user.addresses?.length === 0 }];
+
+            const res = await updateProfile({ addresses: updatedAddresses });
+            if (res.success) {
+                setIsAddingAddress(false);
+                setNewAddress({
+                    address: '',
+                    city: '',
+                    state: '',
+                    postalCode: '',
+                    country: 'India',
+                    phone: ''
+                });
+            } else {
+                alert(res.message);
+            }
+        } catch (error) {
+            console.error("Failed to add address", error);
+        }
+    };
+
+
+
+    // Review Modal State
+    const [reviewModalOpen, setReviewModalOpen] = useState(false);
+    const [selectedProductForReview, setSelectedProductForReview] = useState(null);
+    const [reviewRating, setReviewRating] = useState(5);
+    const [reviewComment, setReviewComment] = useState('');
+    const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+    // Profile Update Logic
+    const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+    const [profileForm, setProfileForm] = useState({
+        name: '',
+        email: '',
+        phone: '',
+        altPhone: '',
+        dob: '',
+        gender: 'Male'
+    });
+
+    useEffect(() => {
+        if (user) {
+            setProfileForm({
+                name: user?.name || '',
+                email: user?.email || '',
+                phone: userProfile?.phone || user?.phone || '',
+                altPhone: userProfile?.altPhone || '',
+                dob: userProfile?.dob || '',
+                gender: userProfile?.gender || 'Male'
+            });
+        }
+    }, [user]);
+
+    const handleProfileUpdate = async () => {
+        setIsUpdatingProfile(true);
+        try {
+            const res = await updateProfile(profileForm);
+            if (res.success) {
+                alert('Profile updated successfully!');
+            } else {
+                alert(res.message || 'Failed to update profile');
+            }
+        } catch (error) {
+            console.error('Update failed', error);
+            alert('An error occurred while updating profile.');
+        } finally {
+            setIsUpdatingProfile(false);
+        }
+    };
+
+    const handleOpenReviewModal = (productId) => {
+        setSelectedProductForReview(productId);
+        setReviewRating(5);
+        setReviewComment('');
+        setReviewModalOpen(true);
+    };
+
+    const closeReviewModal = () => {
+        setReviewModalOpen(false);
+        setSelectedProductForReview(null);
+    };
+
+    const handleSubmitReview = async (e) => {
+        e.preventDefault();
+        if (!selectedProductForReview) return;
+
+        setIsSubmittingReview(true);
+        try {
+            await client.post(`/products/${selectedProductForReview}/reviews`, {
+                rating: reviewRating,
+                comment: reviewComment
+            });
+            alert('Review submitted successfully!');
+            closeReviewModal();
+        } catch (error) {
+            console.error(error);
+            alert(error.response?.data?.message || 'Failed to submit review');
+        } finally {
+            setIsSubmittingReview(false);
+        }
+    };
+
+    // Auth Handlers
     const handleAuthChange = (e) => {
         setAuthData({ ...authData, [e.target.name]: e.target.value });
     };
@@ -163,6 +339,13 @@ const Account = () => {
                                     required
                                 />
                             </div>
+                            {!isRegistering && (
+                                <div className="text-right mt-1">
+                                    <Link to="/forgot-password" className="text-xs text-text-secondary hover:text-accent transition-colors">
+                                        Forgot Password?
+                                    </Link>
+                                </div>
+                            )}
                         </div>
 
                         <button
@@ -249,62 +432,106 @@ const Account = () => {
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="bg-background p-6 rounded-sm border-t-4 border-accent shadow-sm">
-                                        <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Total Orders</p>
-                                        <h3 className="text-3xl font-bold text-primary mt-2">{orders.length}</h3>
+                                    <div className="bg-background p-6 rounded-sm border-t-4 border-accent shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Total Orders</p>
+                                                <h3 className="text-3xl font-bold text-primary mt-2">{orders.length}</h3>
+                                            </div>
+                                            <Package className="text-accent/20" size={32} />
+                                        </div>
                                     </div>
-                                    <div className="bg-background p-6 rounded-sm border-t-4 border-primary shadow-sm">
-                                        <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Pending Delivery</p>
-                                        <h3 className="text-3xl font-bold text-primary mt-2">
-                                            {orders.filter(o => o.status !== 'Delivered').length}
-                                        </h3>
+                                    <div className="bg-background p-6 rounded-sm border-t-4 border-primary shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Pending Delivery</p>
+                                                <h3 className="text-3xl font-bold text-primary mt-2">
+                                                    {orders.filter(o => o.status !== 'Delivered').length}
+                                                </h3>
+                                            </div>
+                                            <Truck className="text-primary/20" size={32} />
+                                        </div>
                                     </div>
-                                    <div className="bg-background p-6 rounded-sm border-t-4 border-secondary shadow-sm">
-                                        <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Total Spent</p>
-                                        <h3 className="text-3xl font-bold text-primary mt-2">
-                                            ₹{orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0).toFixed(0)}
-                                        </h3>
+                                    <div className="bg-background p-6 rounded-sm border-t-4 border-secondary shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="text-text-secondary text-xs uppercase tracking-wider font-medium">Total Spent</p>
+                                                <h3 className="text-3xl font-bold text-primary mt-2">
+                                                    {formatPrice(orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0))}
+                                                </h3>
+                                            </div>
+                                            <CreditCard className="text-secondary/20" size={32} />
+                                        </div>
                                     </div>
                                 </div>
 
                                 <div>
-                                    <h3 className="font-heading text-xl text-primary font-bold mb-4">Recent Orders</h3>
+                                    <h3 className="font-heading text-xl text-primary font-bold mb-4 flex items-center">
+                                        <Clock size={20} className="mr-2 text-secondary" /> Recent Orders
+                                    </h3>
                                     {orders.length > 0 ? (
                                         <div className="space-y-4">
-                                            {orders.slice(0, 3).map((order) => {
-                                                const statusInfo = getOrderStatusInfo(order.status);
-                                                const StatusIcon = statusInfo.icon;
-                                                return (
-                                                    <div key={order._id} className="flex flex-col md:flex-row justify-between items-center border border-secondary/10 p-4 rounded-sm bg-background/50 hover:bg-background transition-colors">
-                                                        <div className="flex items-center gap-4 w-full md:w-auto">
-                                                            <div className={`p-2 rounded-full bg-${statusInfo.color}-100 text-${statusInfo.color}-700`}>
-                                                                <StatusIcon size={20} />
+                                            {[...orders]
+                                                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                                                .slice(0, 3)
+                                                .map((order, index) => {
+                                                    const statusInfo = getOrderStatusInfo(order.status);
+                                                    const StatusIcon = statusInfo.icon;
+                                                    const firstItem = order.orderItems?.[0];
+
+                                                    return (
+                                                        <div
+                                                            key={order._id}
+                                                            style={{ animationDelay: `${index * 100}ms` }}
+                                                            className="flex flex-col md:flex-row justify-between items-center border border-secondary/10 p-4 rounded-sm bg-background/50 hover:bg-background transition-all hover:shadow-sm animate-fade-in-up"
+                                                        >
+                                                            <div className="flex items-center gap-4 w-full md:w-auto">
+                                                                {firstItem?.image ? (
+                                                                    <div className="relative">
+                                                                        <img src={firstItem.image} alt={firstItem.name} className="w-14 h-14 object-cover rounded-sm border border-secondary/10" />
+                                                                        <div className={`absolute -bottom-1 -right-1 p-1 rounded-full bg-white border border-secondary/10`}>
+                                                                            <StatusIcon size={12} className={`text-${statusInfo.color}-600`} />
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className={`w-14 h-14 rounded-sm flex items-center justify-center bg-${statusInfo.color}-50 text-${statusInfo.color}-600`}>
+                                                                        <StatusIcon size={24} />
+                                                                    </div>
+                                                                )}
+
+                                                                <div>
+                                                                    <h4 className="font-bold text-primary text-sm line-clamp-1">
+                                                                        {firstItem?.name || 'Order'}
+                                                                        {order.orderItems?.length > 1 && <span className="text-text-secondary font-normal text-xs ml-1">+{order.orderItems.length - 1} more</span>}
+                                                                    </h4>
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                        <span className="text-xs font-mono text-text-secondary bg-secondary/5 px-1.5 py-0.5 rounded-sm">#{order._id.slice(-6).toUpperCase()}</span>
+                                                                        <span className="text-xs text-text-secondary">• {new Date(order.createdAt).toLocaleDateString()}</span>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                            <div>
-                                                                <h4 className="font-bold text-primary text-sm">
-                                                                    {order.orderItems?.[0]?.name || 'Order'}
-                                                                    {order.orderItems?.length > 1 && ` +${order.orderItems.length - 1} more`}
-                                                                </h4>
-                                                                <p className="text-xs text-text-secondary">
-                                                                    Order {order._id.slice(-8)} • {new Date(order.createdAt).toLocaleDateString()}
-                                                                </p>
+                                                            <div className="flex items-center gap-6 mt-4 md:mt-0 w-full md:w-auto justify-between md:justify-end">
+                                                                <div className="text-right">
+                                                                    <p className="text-[10px] uppercase tracking-wider text-text-secondary mb-0.5">Total</p>
+                                                                    <span className="font-bold text-primary">{formatPrice(order.totalPrice)}</span>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => setActiveTab('orders')}
+                                                                    className="px-4 py-2 bg-white border border-secondary/20 text-xs font-bold uppercase tracking-wider text-primary hover:bg-secondary/5 hover:border-secondary/40 transition-colors rounded-sm"
+                                                                >
+                                                                    View Details
+                                                                </button>
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-6 mt-4 md:mt-0 w-full md:w-auto justify-between md:justify-end">
-                                                            <span className="font-bold text-primary">₹{order.totalPrice?.toFixed(2)}</span>
-                                                            <button
-                                                                onClick={() => setActiveTab('orders')}
-                                                                className="text-xs text-accent uppercase font-bold tracking-wider hover:text-primary transition-colors"
-                                                            >
-                                                                Track
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })}
                                         </div>
                                     ) : (
-                                        <p className="text-text-secondary text-center py-8">No orders yet. Start shopping!</p>
+                                        <div className="text-center py-12 border border-dashed border-secondary/20 rounded-sm bg-secondary/5">
+                                            <Package size={32} className="mx-auto text-secondary/40 mb-3" />
+                                            <p className="text-text-secondary text-sm mb-4">No recent orders found.</p>
+                                            <Link to="/shop" className="text-accent underline hover:text-primary text-sm font-medium">Start Shopping</Link>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -322,20 +549,69 @@ const Account = () => {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
                                             <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Full Name</label>
-                                            <input type="text" defaultValue={userProfile.name} className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary" />
+                                            <input
+                                                type="text"
+                                                value={profileForm.name}
+                                                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Email Address</label>
+                                            <input
+                                                type="email"
+                                                value={profileForm.email}
+                                                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
+                                            />
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Phone Number</label>
-                                            <input type="text" defaultValue={userProfile.phone} className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary" />
+                                            <input
+                                                type="tel"
+                                                value={profileForm.phone}
+                                                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Alternate Phone</label>
+                                            <input
+                                                type="tel"
+                                                value={profileForm.altPhone}
+                                                onChange={(e) => setProfileForm({ ...profileForm, altPhone: e.target.value })}
+                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Date of Birth</label>
+                                            <input
+                                                type="date"
+                                                value={profileForm.dob}
+                                                onChange={(e) => setProfileForm({ ...profileForm, dob: e.target.value })}
+                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Gender</label>
+                                            <select
+                                                value={profileForm.gender}
+                                                onChange={(e) => setProfileForm({ ...profileForm, gender: e.target.value })}
+                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
+                                            >
+                                                <option value="Male">Male</option>
+                                                <option value="Female">Female</option>
+                                                <option value="Other">Other</option>
+                                            </select>
                                         </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Email Address</label>
-                                        <input type="email" defaultValue={userProfile.email} className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary" />
-                                    </div>
                                     <div className="pt-4">
-                                        <button className="bg-primary text-surface px-8 py-3 text-sm font-medium uppercase tracking-wider hover:bg-accent hover:text-primary transition-colors rounded-sm shadow-md">
-                                            Save Changes
+                                        <button
+                                            onClick={handleProfileUpdate}
+                                            disabled={isUpdatingProfile}
+                                            className="bg-primary text-surface px-8 py-3 text-sm font-medium uppercase tracking-wider hover:bg-accent hover:text-primary transition-colors rounded-sm shadow-md disabled:opacity-70"
+                                        >
+                                            {isUpdatingProfile ? 'Saving...' : 'Save Changes'}
                                         </button>
                                     </div>
                                 </div>
@@ -345,115 +621,496 @@ const Account = () => {
                         {/* 3. Orders View */}
                         {activeTab === 'orders' && (
                             <div className="p-6 md:p-8 space-y-8 animate-fade-in">
-                                <div className="border-b border-secondary/10 pb-6">
-                                    <h2 className="font-heading text-3xl text-primary font-bold">My Orders</h2>
-                                    <p className="text-text-secondary text-sm font-light mt-1">Track your shipment status and order history.</p>
+                                <div className="border-b border-secondary/10 pb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                    <div>
+                                        <h2 className="font-heading text-3xl text-primary font-bold">My Orders</h2>
+                                        <p className="text-text-secondary text-sm font-light mt-1">Track your shipment status and order history.</p>
+                                    </div>
+
+                                    <div className="flex flex-col sm:flex-row gap-4">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary" size={16} />
+                                            <input
+                                                type="text"
+                                                placeholder="Search Order ID..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                className="pl-9 pr-4 py-2 border border-secondary/20 rounded-sm text-sm focus:outline-none focus:border-primary w-full sm:w-64"
+                                            />
+                                        </div>
+                                        <div className="relative">
+                                            <select
+                                                value={sortOrder}
+                                                onChange={(e) => setSortOrder(e.target.value)}
+                                                className="appearance-none pl-4 pr-10 py-2 border border-secondary/20 rounded-sm text-sm focus:outline-none focus:border-primary bg-white cursor-pointer w-full sm:w-auto"
+                                            >
+                                                <option value="newest">Newest First</option>
+                                                <option value="oldest">Oldest First</option>
+                                                <option value="price-high">Price: High to Low</option>
+                                                <option value="price-low">Price: Low to High</option>
+                                            </select>
+                                            <Filter className="absolute right-3 top-1/2 -translate-y-1/2 text-secondary pointer-events-none" size={14} />
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {orders.length > 0 ? (
                                     <div className="space-y-6">
-                                        {orders.map((order) => {
-                                            const statusInfo = getOrderStatusInfo(order.status);
-                                            return (
-                                                <div key={order._id} className="border border-secondary/10 p-6 rounded-sm bg-background hover:shadow-md transition-shadow">
-                                                    <div className="flex flex-col md:flex-row justify-between mb-4">
-                                                        <div>
-                                                            <div className="flex items-center gap-3">
-                                                                <h3 className="font-heading text-lg font-bold text-primary">#{order._id.slice(-8)}</h3>
-                                                                <span className={`text-xs px-2 py-1 rounded-full bg-${statusInfo.color}-100 text-${statusInfo.color}-800 font-bold`}>
-                                                                    {order.status}
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-xs text-text-secondary mt-1">Placed on {new Date(order.createdAt).toLocaleDateString()}</p>
-                                                        </div>
-                                                        <div className="text-right mt-2 md:mt-0">
-                                                            <p className="font-bold text-primary text-xl">₹{order.totalPrice?.toFixed(2)}</p>
-                                                            <p className="text-xs text-text-secondary">{order.orderItems?.length || 0} item(s)</p>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Order Tracking Timeline */}
-                                                    <div className="my-6 py-6 border-y border-secondary/10">
-                                                        <p className="text-xs font-bold uppercase text-text-secondary mb-4 tracking-wider">Order Progress</p>
-                                                        <div className="flex items-center justify-between relative">
-                                                            {/* Progress Line */}
-                                                            <div className="absolute top-5 left-0 right-0 h-1 bg-secondary/10">
-                                                                <div
-                                                                    className="h-full bg-primary transition-all duration-500"
-                                                                    style={{ width: `${((statusInfo.step - 1) / 3) * 100}%` }}
-                                                                />
-                                                            </div>
-
-                                                            {/* Steps */}
-                                                            {['Pending', 'Approved', 'Packed', 'Shipped'].map((status, idx) => {
-                                                                const stepInfo = getOrderStatusInfo(status);
-                                                                const isComplete = statusInfo.step > idx + 1;
-                                                                const isCurrent = statusInfo.step === idx + 1;
-                                                                const StepIcon = stepInfo.icon;
-
-                                                                return (
-                                                                    <div key={status} className="flex flex-col items-center relative z-10">
-                                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-all ${isComplete ? 'bg-primary text-white' :
-                                                                            isCurrent ? 'bg-primary text-white animate-pulse' :
-                                                                                'bg-secondary/10 text-text-secondary'
-                                                                            }`}>
-                                                                            <StepIcon size={18} />
-                                                                        </div>
-                                                                        <p className={`text-xs font-medium text-center ${isComplete || isCurrent ? 'text-primary' : 'text-text-secondary'
-                                                                            }`}>
-                                                                            {stepInfo.label}
-                                                                        </p>
+                                        {orders
+                                            .filter(order => order._id.toLowerCase().includes(searchQuery.toLowerCase()) || order.orderItems.some(i => i.name.toLowerCase().includes(searchQuery.toLowerCase())))
+                                            .sort((a, b) => {
+                                                if (sortOrder === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
+                                                if (sortOrder === 'oldest') return new Date(a.createdAt) - new Date(b.createdAt);
+                                                if (sortOrder === 'price-high') return b.totalPrice - a.totalPrice;
+                                                if (sortOrder === 'price-low') return a.totalPrice - b.totalPrice;
+                                                return 0;
+                                            })
+                                            .map((order) => {
+                                                const statusInfo = getOrderStatusInfo(order.status);
+                                                return (
+                                                    <div key={order._id} className="border border-secondary/10 rounded-sm bg-background hover:shadow-md transition-shadow overflow-hidden group">
+                                                        {/* Card Header */}
+                                                        <div className="bg-secondary/5 p-4 md:px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-10 h-10 rounded-full bg-white border border-secondary/10 flex items-center justify-center font-heading font-bold text-primary text-xs shadow-sm">
+                                                                    #{order._id.slice(-4).toUpperCase()}
+                                                                </div>
+                                                                <div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-${statusInfo.color}-100 text-${statusInfo.color}-700`}>
+                                                                            {order.status}
+                                                                        </span>
+                                                                        <span className="text-secondary text-xs">•</span>
+                                                                        <span className="text-xs text-text-secondary">Placed on {new Date(order.createdAt).toLocaleDateString()}</span>
                                                                     </div>
-                                                                );
-                                                            })}
+                                                                    <p className="text-xs text-text-secondary mt-1 font-mono">ID: #{order._id}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
+                                                                <div className="text-right">
+                                                                    <p className="text-[10px] uppercase tracking-wider text-text-secondary mb-0.5">Total Amount</p>
+                                                                    <p className="font-bold text-primary text-lg">{formatPrice(order.totalPrice)}</p>
+                                                                </div>
+                                                                <Link to={`/track-order?orderId=${order._id}`} className="bg-white border border-secondary/20 hover:bg-secondary/5 text-primary text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-sm transition-colors shadow-sm hidden md:block">
+                                                                    Track Order
+                                                                </Link>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Card Body */}
+                                                        <div className="p-4 md:p-6">
+                                                            {/* Items */}
+                                                            <div className="space-y-4 mb-8">
+                                                                {order.orderItems?.map((item, idx) => (
+                                                                    <div key={idx} className="flex gap-4 items-center">
+                                                                        <div className="w-14 h-14 bg-surface rounded-sm flex-shrink-0 border border-secondary/10 p-1">
+                                                                            <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                                                                        </div>
+                                                                        <div className="flex-grow min-w-0">
+                                                                            <p className="font-bold text-primary text-sm truncate">{item.name}</p>
+                                                                            <p className="text-xs text-text-secondary mt-0.5">Qty: {item.quantity} × {formatPrice(item.price)}</p>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <p className="font-bold text-primary text-sm">{formatPrice(item.quantity * item.price)}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+
+                                                            {/* Progress Bar - Simplified for Card */}
+                                                            <div>
+                                                                <p className="text-[10px] font-bold uppercase text-text-secondary mb-3 tracking-wider">Order Progress</p>
+                                                                <div className="relative">
+                                                                    <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-secondary/10 -translate-y-1/2 rounded-full"></div>
+                                                                    <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-primary -translate-y-1/2 rounded-full transition-all duration-500" style={{ width: `${((statusInfo.step - 1) / 4) * 100}%` }}></div>
+
+                                                                    <div className="relative flex justify-between">
+                                                                        {['Placed', 'Confirmed', 'Packed', 'Shipped', 'Delivered'].map((step, idx) => {
+                                                                            const isCompleted = idx < statusInfo.step;
+                                                                            const isCurrent = idx === statusInfo.step - 1;
+
+                                                                            return (
+                                                                                <div key={step} className="flex flex-col items-center gap-2">
+                                                                                    <div className={`w-3 h-3 rounded-full border-2 transition-colors z-10 ${isCompleted || isCurrent ? 'bg-primary border-primary' : 'bg-background border-secondary/30'}`}></div>
+                                                                                    <span className={`text-[10px] font-medium transition-colors ${isCompleted || isCurrent ? 'text-primary' : 'text-secondary/50'}`}>{step}</span>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="md:hidden mt-6 pt-4 border-t border-secondary/10">
+                                                                    <Link to={`/track-order?orderId=${order._id}`} className="block w-full text-center bg-white border border-secondary/20 hover:bg-secondary/5 text-primary text-xs font-bold uppercase tracking-wider px-4 py-3 rounded-sm transition-colors shadow-sm">
+                                                                        Track Order
+                                                                    </Link>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
-
-                                                    {/* Order Items */}
-                                                    <div className="space-y-3 mb-4">
-                                                        {order.orderItems?.map((item, idx) => (
-                                                            <div key={idx} className="flex items-start gap-4 py-3 border-b border-secondary/5 last:border-0">
-                                                                <div className="w-12 h-12 bg-surface rounded-sm flex-shrink-0 border border-secondary/10 p-1">
-                                                                    <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
-                                                                </div>
-                                                                <div className="flex-grow">
-                                                                    <p className="font-medium text-primary text-sm">{item.name}</p>
-                                                                    <p className="text-xs text-text-secondary">Qty: {item.quantity} × ₹{item.price}</p>
-                                                                </div>
-                                                                <p className="font-bold text-primary">₹{(item.quantity * item.price).toFixed(2)}</p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-
-
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })}
                                     </div>
                                 ) : (
-                                    <div className="text-center py-12">
-                                        <Package size={48} className="mx-auto text-secondary/30 mb-4" />
-                                        <p className="text-text-secondary mb-4">No orders yet</p>
-                                        <Link to="/shop" className="text-accent underline hover:text-primary">Start Shopping</Link>
+                                    <div className="text-center py-12 border border-dashed border-secondary/20 rounded-sm bg-secondary/5">
+                                        <Package size={32} className="mx-auto text-secondary/40 mb-3" />
+                                        <p className="text-text-secondary text-sm mb-4">No orders found matching your criteria.</p>
+                                        <button onClick={() => { setSearchQuery(''); setSortOrder('newest'); }} className="text-accent underline hover:text-primary text-sm font-medium">Clear Filters</button>
                                     </div>
                                 )}
                             </div>
                         )}
 
-                        {/* Placeholder for other B2C tabs */}
-                        {['addresses', 'wishlist', 'settings', 'support'].includes(activeTab) && (
-                            <div className="p-6 md:p-8 space-y-8 animate-fade-in flex flex-col items-center justify-center h-full min-h-[400px] text-center">
-                                <Settings size={48} className="text-secondary/30 mb-4" />
-                                <h3 className="text-xl font-bold text-primary capitalize">{activeTab}</h3>
-                                <p className="text-text-secondary max-w-md">Manage your {activeTab} here. (Feature coming soon)</p>
-                                <button onClick={() => setActiveTab('dashboard')} className="text-accent underline mt-4 hover:text-primary">Return to Dashboard</button>
+                        {/* 4. Addresses View */}
+                        {activeTab === 'addresses' && (
+                            <div className="p-6 md:p-8 space-y-8 animate-fade-in">
+                                <div className="border-b border-secondary/10 pb-6 flex justify-between items-center">
+                                    <div>
+                                        <h2 className="font-heading text-3xl text-primary font-bold">My Addresses</h2>
+                                        <p className="text-text-secondary text-sm font-light mt-1">Manage your shipping addresses.</p>
+                                    </div>
+                                    {!isAddingAddress && (
+                                        <button
+                                            onClick={() => setIsAddingAddress(true)}
+                                            className="bg-primary text-surface px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-sm hover:bg-accent hover:text-primary transition-colors flex items-center gap-2"
+                                        >
+                                            <MapPin size={16} /> Add New
+                                        </button>
+                                    )}
+                                </div>
+
+                                {isAddingAddress ? (
+                                    <div className="bg-background p-6 rounded-sm border border-secondary/10">
+                                        <h3 className="font-heading text-lg font-bold text-primary mb-6">Add New Address</h3>
+                                        <form onSubmit={handleAddressSubmit} className="space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="col-span-2">
+                                                    <label className="block text-xs uppercase tracking-wider text-text-secondary mb-1">Street Address</label>
+                                                    <input
+                                                        required
+                                                        type="text"
+                                                        value={newAddress.address}
+                                                        onChange={(e) => setNewAddress({ ...newAddress, address: e.target.value })}
+                                                        className="w-full bg-surface border border-secondary/20 rounded-sm p-3 text-sm focus:outline-none focus:border-primary"
+                                                        placeholder="e.g. A-102 Block A Prayosha bliss"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wider text-text-secondary mb-1">City</label>
+                                                    <input
+                                                        required
+                                                        type="text"
+                                                        value={newAddress.city}
+                                                        onChange={(e) => setNewAddress({ ...newAddress, city: e.target.value })}
+                                                        className="w-full bg-surface border border-secondary/20 rounded-sm p-3 text-sm focus:outline-none focus:border-primary"
+                                                        placeholder="Surat"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wider text-text-secondary mb-1">State / Province</label>
+                                                    <input
+                                                        required
+                                                        type="text"
+                                                        value={newAddress.state}
+                                                        onChange={(e) => setNewAddress({ ...newAddress, state: e.target.value })}
+                                                        className="w-full bg-surface border border-secondary/20 rounded-sm p-3 text-sm focus:outline-none focus:border-primary"
+                                                        placeholder="Gujarat"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wider text-text-secondary mb-1">Postal Code</label>
+                                                    <input
+                                                        required
+                                                        type="text"
+                                                        value={newAddress.postalCode}
+                                                        onChange={(e) => setNewAddress({ ...newAddress, postalCode: e.target.value })}
+                                                        className="w-full bg-surface border border-secondary/20 rounded-sm p-3 text-sm focus:outline-none focus:border-primary"
+                                                        placeholder="394210"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs uppercase tracking-wider text-text-secondary mb-1">Phone Number</label>
+                                                    <input
+                                                        required
+                                                        type="tel"
+                                                        value={newAddress.phone}
+                                                        onChange={(e) => setNewAddress({ ...newAddress, phone: e.target.value })}
+                                                        className="w-full bg-surface border border-secondary/20 rounded-sm p-3 text-sm focus:outline-none focus:border-primary"
+                                                        placeholder="+91 98765 43210"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end gap-4 pt-4">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsAddingAddress(false)}
+                                                    className="text-text-secondary text-sm hover:text-primary transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="submit"
+                                                    className="bg-primary text-white px-6 py-2 rounded-sm text-sm font-bold uppercase tracking-widest hover:bg-accent hover:text-primary transition-colors"
+                                                >
+                                                    Save Address
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {user.addresses && user.addresses.length > 0 ? (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                {user.addresses.map((addr, idx) => (
+                                                    <div key={idx} className="border border-secondary/20 p-6 rounded-sm relative hover:shadow-md transition-shadow bg-background">
+                                                        {addr.isDefault && (
+                                                            <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2 py-1 rounded-sm">Default</span>
+                                                        )}
+                                                        <h4 className="font-bold text-primary mb-2 flex items-center">
+                                                            Address #{idx + 1}
+                                                        </h4>
+                                                        <div className="text-sm text-text-secondary space-y-1 mb-4">
+                                                            <p className="font-medium text-primary block mb-1">{addr.address}</p>
+                                                            <p>{addr.city}, {addr.state} {addr.postalCode}</p>
+                                                            <p>{addr.country}</p>
+                                                            <p className="flex items-center gap-1 mt-2 text-xs opacity-80">
+                                                                <Phone size={12} /> {user.phone || addr.phone || 'N/A'}
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-4 pt-4 border-t border-secondary/10">
+                                                            <button className="text-xs font-bold uppercase text-primary hover:text-accent transition-colors flex items-center gap-1">
+                                                                Edit
+                                                            </button>
+                                                            <button className="text-xs font-bold uppercase text-red-500 hover:text-red-700 transition-colors flex items-center gap-1">
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-12 bg-secondary/5 rounded-sm border border-dashed border-secondary/20">
+                                                <MapPin size={32} className="mx-auto text-secondary/40 mb-3" />
+                                                <p className="text-text-secondary text-sm">No addresses saved yet.</p>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {/* 5. Wishlist View */}
+                        {activeTab === 'wishlist' && (
+                            <div className="p-6 md:p-8 space-y-8 animate-fade-in">
+                                <div className="border-b border-secondary/10 pb-6">
+                                    <h2 className="font-heading text-3xl text-primary font-bold">My Wishlist</h2>
+                                    <p className="text-text-secondary text-sm font-light mt-1">Items you saved for later.</p>
+                                </div>
+
+                                {user.wishlist && user.wishlist.length > 0 ? (
+                                    <WishlistGrid />
+                                ) : (
+                                    <div className="text-center py-12">
+                                        <Heart size={48} className="mx-auto text-secondary/30 mb-4" />
+                                        <p className="text-text-secondary mb-4">Your wishlist is empty</p>
+                                        <Link to="/shop" className="text-accent underline hover:text-primary">Browse Products</Link>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+
+                        {/* 6. Settings View */}
+                        {activeTab === 'settings' && (
+                            <div className="p-6 md:p-8 space-y-8 animate-fade-in">
+                                <div className="border-b border-secondary/10 pb-6">
+                                    <h2 className="font-heading text-3xl text-primary font-bold">Settings</h2>
+                                    <p className="text-text-secondary text-sm font-light mt-1">Manage your account preferences and security.</p>
+                                </div>
+
+                                <div className="space-y-8 max-w-3xl">
+                                    {/* Notifications */}
+                                    <div className="bg-background border border-secondary/10 p-6 rounded-sm">
+                                        <h3 className="font-bold text-lg text-primary mb-4 flex items-center gap-2">
+                                            <Mail size={18} /> Notification Preferences
+                                        </h3>
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="font-bold text-sm text-primary">Order Updates</p>
+                                                    <p className="text-xs text-text-secondary">Receive updates about your order status.</p>
+                                                </div>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" defaultChecked className="sr-only peer" />
+                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                                </label>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="font-bold text-sm text-primary">Promotions</p>
+                                                    <p className="text-xs text-text-secondary">Receive emails about new products and sales.</p>
+                                                </div>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" className="sr-only peer" />
+                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Password */}
+                                    <div className="bg-background border border-secondary/10 p-6 rounded-sm">
+                                        <h3 className="font-bold text-lg text-primary mb-4 flex items-center gap-2">
+                                            <Lock size={18} /> Security
+                                        </h3>
+                                        <form className="space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Current Password</label>
+                                                    <input type="password" className="w-full border border-secondary/20 bg-surface px-4 py-2 rounded-sm focus:outline-none focus:border-accent text-sm" placeholder="••••••••" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">New Password</label>
+                                                    <input type="password" className="w-full border border-secondary/20 bg-surface px-4 py-2 rounded-sm focus:outline-none focus:border-accent text-sm" placeholder="••••••••" />
+                                                </div>
+                                            </div>
+                                            <div className="pt-2">
+                                                <button className="text-xs font-bold uppercase tracking-wider text-primary border border-primary px-4 py-2 rounded-sm hover:bg-primary hover:text-surface transition-colors">
+                                                    Update Password
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+
+                                    {/* Delete Account */}
+                                    <div className="pt-6 border-t border-secondary/10">
+                                        <button className="text-red-600 text-sm font-bold flex items-center gap-2 hover:text-red-700 transition-colors">
+                                            <LogOut size={16} /> Delete My Account
+                                        </button>
+                                        <p className="text-xs text-text-secondary mt-1">This action cannot be undone.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 7. Support View */}
+                        {activeTab === 'support' && (
+                            <div className="p-6 md:p-8 space-y-8 animate-fade-in">
+                                <div className="border-b border-secondary/10 pb-6">
+                                    <h2 className="font-heading text-3xl text-primary font-bold">Support</h2>
+                                    <p className="text-text-secondary text-sm font-light mt-1">Need help? We're here for you.</p>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="space-y-6">
+                                        <h3 className="font-bold text-lg text-primary">Contact Us</h3>
+                                        <div className="flex items-start gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-primary flex-shrink-0">
+                                                <Mail size={20} />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-sm">Email</h4>
+                                                <p className="text-text-secondary text-sm">support@sirabaorganic.com</p>
+                                                <p className="text-xs text-text-secondary mt-1">Response time: 24 hours</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-start gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center text-primary flex-shrink-0">
+                                                <Phone size={20} />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-sm">Phone</h4>
+                                                <p className="text-text-secondary text-sm">+91 98765 43210</p>
+                                                <p className="text-xs text-text-secondary mt-1">Mon-Fri, 9am - 6pm IST</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-secondary/5 p-6 rounded-sm">
+                                        <h3 className="font-bold text-lg text-primary mb-4">Send a Message</h3>
+                                        <form className="space-y-4">
+                                            <input type="text" placeholder="Subject" className="w-full p-3 bg-white border border-secondary/20 rounded-sm text-sm" />
+                                            <textarea placeholder="How can we help?" className="w-full p-3 bg-white border border-secondary/20 rounded-sm text-sm h-32"></textarea>
+                                            <button className="bg-primary text-surface px-6 py-2 text-sm font-bold uppercase tracking-widest hover:bg-accent hover:text-primary transition-colors w-full rounded-sm">
+                                                Send Message
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
                     </div>
                 </div>
             </div>
-        </div>
+            {/* Review Modal */}
+            {
+                reviewModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                        <div className="bg-white rounded-sm shadow-xl w-full max-w-md overflow-hidden relative">
+                            <button
+                                onClick={closeReviewModal}
+                                className="absolute top-4 right-4 text-text-secondary hover:text-primary transition-colors"
+                            >
+                                <X size={24} />
+                            </button>
+
+                            <div className="p-6">
+                                <h3 className="text-xl font-heading font-bold text-primary mb-2">Write a Review</h3>
+                                <p className="text-text-secondary text-sm mb-6">Share your experience with this product.</p>
+
+                                <form onSubmit={handleSubmitReview} className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-text-secondary mb-2">Rating</label>
+                                        <div className="flex gap-2">
+                                            {[1, 2, 3, 4, 5].map((star) => (
+                                                <button
+                                                    key={star}
+                                                    type="button"
+                                                    onClick={() => setReviewRating(star)}
+                                                    className={`transition-colors ${reviewRating >= star ? 'text-accent' : 'text-gray-300'}`}
+                                                >
+                                                    <Star size={28} fill={reviewRating >= star ? "currentColor" : "none"} />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-text-secondary mb-2">Comment</label>
+                                        <textarea
+                                            required
+                                            rows="4"
+                                            value={reviewComment}
+                                            onChange={(e) => setReviewComment(e.target.value)}
+                                            placeholder="Tell us what you liked or disliked..."
+                                            className="w-full bg-surface border border-secondary/20 rounded-sm p-3 focus:border-accent outline-none"
+                                        ></textarea>
+                                    </div>
+
+                                    <div className="flex justify-end gap-3 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={closeReviewModal}
+                                            className="px-4 py-2 text-sm font-bold text-text-secondary hover:text-primary transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmittingReview}
+                                            className="bg-primary text-white px-6 py-2 rounded-sm text-sm font-bold hover:bg-accent transition-colors disabled:opacity-50"
+                                        >
+                                            {isSubmittingReview ? 'Submitting...' : 'Submit Review'}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 
