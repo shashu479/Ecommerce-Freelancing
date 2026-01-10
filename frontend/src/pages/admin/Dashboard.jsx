@@ -1771,26 +1771,94 @@ const AdminDashboard = () => {
                         </div>
                     </div>
 
-                    {/* Sales Trend (Last 7 Days) */}
+                    {/* Sales Trend (Last 7 Days) - Enhanced */}
                     <div className="bg-surface p-6 rounded-sm shadow-sm border border-secondary/10">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-lg font-bold text-primary">Sales Trend (Last 7 Days)</h3>
-                            <button onClick={downloadCSV} className="text-xs text-accent uppercase font-bold tracking-wider hover:underline">Download CSV</button>
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-primary">Sales Trend (Last 7 Days)</h3>
+                                <p className="text-xs text-text-secondary mt-1">Daily revenue and order count</p>
+                            </div>
+                            <button onClick={downloadCSV} className="text-xs text-accent uppercase font-bold tracking-wider hover:underline flex items-center gap-1">
+                                <FileText size={14} />
+                                Download CSV
+                            </button>
                         </div>
-                        <div className="flex items-end justify-between h-48 gap-2 pt-4">
-                            {analyticsData.salesByDate && analyticsData.salesByDate.length > 0 ? analyticsData.salesByDate.map((day) => (
-                                <div key={day._id} className="flex flex-col items-center gap-2 flex-1 group relative">
-                                    <div
-                                        className="w-full bg-accent/80 hover:bg-accent transition-all rounded-t-sm relative"
-                                        style={{ height: `${(day.totalSales / maxSales) * 100}%` }}
-                                    >
-                                        <div className="opacity-0 group-hover:opacity-100 absolute -top-10 left-1/2 transform -translate-x-1/2 bg-primary text-surface text-xs py-1 px-2 rounded whitespace-nowrap z-10 pointer-events-none transition-opacity">
-                                            {formatPrice(day.totalSales)} ({day.count})
-                                        </div>
+
+                        {/* Chart with gridlines and improved visualization */}
+                        <div className="relative">
+                            {/* Y-axis labels */}
+                            <div className="absolute left-0 top-0 bottom-8 w-12 flex flex-col justify-between text-right pr-2">
+                                <span className="text-[10px] text-text-secondary">{formatPrice(maxSales)}</span>
+                                <span className="text-[10px] text-text-secondary">{formatPrice(maxSales * 0.75)}</span>
+                                <span className="text-[10px] text-text-secondary">{formatPrice(maxSales * 0.5)}</span>
+                                <span className="text-[10px] text-text-secondary">{formatPrice(maxSales * 0.25)}</span>
+                                <span className="text-[10px] text-text-secondary">0</span>
+                            </div>
+
+                            {/* Chart area */}
+                            <div className="ml-14">
+                                {/* Horizontal gridlines */}
+                                <div className="relative h-56">
+                                    <div className="absolute inset-0 flex flex-col justify-between">
+                                        {[0, 1, 2, 3, 4].map(i => (
+                                            <div key={i} className="border-t border-dashed border-secondary/20"></div>
+                                        ))}
                                     </div>
-                                    <span className="text-[10px] text-text-secondary transform -rotate-45 mt-2 origin-top-left whitespace-nowrap">{day._id.slice(5)}</span>
+
+                                    {/* Bars */}
+                                    <div className="absolute inset-0 flex items-end justify-between gap-2 pt-4">
+                                        {analyticsData.salesByDate && analyticsData.salesByDate.length > 0 ? analyticsData.salesByDate.map((day) => {
+                                            const date = new Date(day._id);
+                                            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                            const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                            const heightPercent = (day.totalSales / maxSales) * 100;
+
+                                            return (
+                                                <div key={day._id} className="flex flex-col items-center gap-2 flex-1 group relative">
+                                                    {/* Bar with value on top */}
+                                                    <div className="w-full flex flex-col items-center">
+                                                        {/* Value display on bar */}
+                                                        <div className={`text-[10px] font-bold mb-1 transition-opacity ${heightPercent > 20 ? 'text-primary' : 'text-text-secondary'}`}>
+                                                            {formatPrice(day.totalSales)}
+                                                        </div>
+
+                                                        {/* Bar */}
+                                                        <div
+                                                            className="w-full bg-gradient-to-t from-accent to-accent/60 hover:from-primary hover:to-primary/80 transition-all rounded-t-md relative shadow-sm"
+                                                            style={{ height: `${Math.max(heightPercent, 5)}%` }}
+                                                        >
+                                                            {/* Enhanced tooltip */}
+                                                            <div className="opacity-0 group-hover:opacity-100 absolute -top-16 left-1/2 transform -translate-x-1/2 bg-primary text-surface text-xs py-2 px-3 rounded-md shadow-lg z-10 pointer-events-none transition-opacity whitespace-nowrap">
+                                                                <div className="font-bold mb-1">{dayName}, {monthDay}</div>
+                                                                <div>Revenue: {formatPrice(day.totalSales)}</div>
+                                                                <div>Orders: {day.count}</div>
+                                                                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-primary"></div>
+                                                            </div>
+
+                                                            {/* Order count badge */}
+                                                            {heightPercent > 15 && (
+                                                                <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-white/90 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                                                    {day.count}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Date labels */}
+                                                    <div className="text-center">
+                                                        <div className="text-[10px] font-bold text-primary">{dayName}</div>
+                                                        <div className="text-[9px] text-text-secondary">{monthDay}</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }) : (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <p className="text-sm text-text-secondary">No sales data available for this period</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            )) : <p className="w-full text-center text-sm text-text-secondary my-auto">No data for this period.</p>}
+                            </div>
                         </div>
                     </div>
                 </div>
