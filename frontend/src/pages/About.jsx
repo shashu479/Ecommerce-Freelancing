@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { Shield, Award, Feather, Quote, ChevronDown, CheckCircle2, ArrowRight } from 'lucide-react';
 import BgImage1 from '../assets/bgimage1.png';
 import BgImage2 from '../assets/profileimage.png';
-import SaffronImage from '../assets/saffron.png';
-import HingImage from '../assets/hing.png';
+import SaffronImage from '../assets/Saffron.png';
+import HingImage from '../assets/Hing.png';
 
 
 const About = () => {
