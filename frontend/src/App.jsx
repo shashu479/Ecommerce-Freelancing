@@ -156,7 +156,7 @@ function App() {
                               />
                               <Route
                                 path="/vendor/register"
-                                element={<VendorOnboarding />}
+                                element={<VendorLogin />}
                               />
                               <Route
                                 path="/vendor/onboarding"

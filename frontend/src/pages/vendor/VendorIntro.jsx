@@ -4,8 +4,7 @@ import {
     LayoutDashboard, Package, ShoppingBag, Settings,
     Plus, Search, Filter, ChevronDown, Upload, X,
     DollarSign, TrendingUp, Calendar, AlertCircle, CheckCircle,
-    FileText, Shield, MessageSquare, Star, Headphones, LogOut, ArrowRight,
-    Store, Award, Users, Globe
+    Store, Award, Users, Globe, ArrowLeft
 } from "lucide-react";
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,6 +23,13 @@ const VendorIntro = () => {
         <div className="min-h-screen bg-background pt-20">
             {/* Hero Section */}
             <section className="relative overflow-hidden py-24 md:py-32">
+                {/* Back Button */}
+                <div className="absolute top-6 left-6 z-20">
+                    <Link to="/" className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 backdrop-blur-sm border border-secondary/10 rounded-full text-sm font-bold text-primary hover:bg-white hover:shadow-md transition-all">
+                        <ArrowLeft size={16} />
+                        Back to Home
+                    </Link>
+                </div>
                 <div className="absolute inset-0 bg-primary/5 pointer-events-none"></div>
                 <div className="absolute top-0 right-0 w-1/3 h-full bg-accent/5 rounded-l-full blur-3xl transform translate-x-1/2"></div>
 

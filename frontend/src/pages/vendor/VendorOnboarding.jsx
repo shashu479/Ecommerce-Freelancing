@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Upload,
   X,
+  ArrowLeft,
 } from "lucide-react";
 import Logo from "../../assets/SIRABALOGO.png";
 
@@ -716,11 +717,14 @@ const VendorOnboarding = () => {
           <span className="font-subheading text-accent text-sm tracking-[0.1em] uppercase font-bold">
             Vendor Onboarding
           </span>
+          <Link to="/" className="flex items-center gap-2 text-sm text-text-secondary hover:text-primary transition-colors font-medium">
+            <ArrowLeft size={16} /> Exit
+          </Link>
         </div>
-      </header>
+      </header >
 
       {/* Progress Steps */}
-      <div className="bg-surface border-b border-secondary/10">
+      < div className="bg-surface border-b border-secondary/10" >
         <div className="max-w-4xl mx-auto px-6 py-8">
           <div className="flex items-center justify-between">
             {steps.map((step, index) => (
@@ -755,10 +759,10 @@ const VendorOnboarding = () => {
             ))}
           </div>
         </div>
-      </div>
+      </div >
 
       {/* Content */}
-      <div className="max-w-2xl mx-auto px-6 py-10">
+      < div className="max-w-2xl mx-auto px-6 py-10" >
         <div className="bg-surface rounded-sm shadow-lg p-8 border border-secondary/10">
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-sm flex items-center gap-2">
@@ -768,8 +772,8 @@ const VendorOnboarding = () => {
           )}
           {renderStep()}
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 

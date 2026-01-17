@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Check, Shield, Zap, TrendingUp, AlertCircle, Calendar, Star } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Check, Shield, Zap, TrendingUp, AlertCircle, Calendar, Star, ArrowLeft } from "lucide-react";
 import client from "../../api/client";
 
 const PlanFeature = ({ text }) => (
@@ -137,7 +138,10 @@ const VendorSubscription = () => {
     return (
         <div className="p-6 max-w-7xl mx-auto space-y-10 animate-fade-in">
             {/* Header */}
-            <div className="text-center">
+            <div className="text-center relative">
+                <Link to="/vendor/dashboard" className="absolute left-0 top-1/2 -translate-y-1/2 hidden md:inline-flex items-center gap-2 text-sm text-text-secondary hover:text-primary transition-colors">
+                    <ArrowLeft size={16} /> Back
+                </Link>
                 <span className="text-accent text-xs tracking-[0.2em] uppercase font-bold">Subscription Management</span>
                 <h1 className="font-heading text-4xl md:text-5xl text-primary mt-2">Your Plan</h1>
                 <p className="text-text-secondary mt-3 font-light max-w-xl mx-auto">Manage your subscription and optimize your commission rates.</p>

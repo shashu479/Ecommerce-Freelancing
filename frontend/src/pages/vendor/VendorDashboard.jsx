@@ -109,6 +109,9 @@ const VendorSidebar = ({
             <img src={Logo} alt="Siraba" className="h-12" />
           </Link>
           <span className="font-subheading text-accent text-xs tracking-[0.2em] uppercase font-bold mt-3 block">Vendor Portal</span>
+          <Link to="/" className="flex items-center gap-2 text-xs font-medium text-text-secondary hover:text-primary mt-4 transition-colors">
+            <ArrowLeft size={12} /> Back to Website
+          </Link>
         </div>
 
         {/* Vendor Info */}

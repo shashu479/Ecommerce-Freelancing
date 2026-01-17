@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useVendor } from "../../context/VendorContext";
 import {
   Store,
@@ -13,6 +13,7 @@ import {
   Leaf,
   ShieldCheck,
   Globe,
+  ArrowLeft
 } from "lucide-react";
 import Logo from "../../assets/SIRABALOGO.png";
 import BgImage2 from "../../assets/bgimage2.png";
@@ -34,6 +35,13 @@ const VendorLogin = () => {
   const [loading, setLoading] = useState(false);
   const { login, register, vendor } = useVendor();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname.includes("register")) {
+      setIsLogin(false);
+    }
+  }, [location]);
 
   // Redirect if already logged in
   React.useEffect(() => {
@@ -87,6 +95,13 @@ const VendorLogin = () => {
     <div className="min-h-screen relative overflow-hidden">
       {/* Background Image with Overlay */}
       <div className="absolute inset-0 z-0">
+        {/* Back Button */}
+        <div className="absolute top-6 left-6 z-30">
+          <Link to="/" className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-sm font-bold text-white hover:bg-white/20 hover:shadow-lg transition-all">
+            <ArrowLeft size={16} />
+            Back to Home
+          </Link>
+        </div>
         <img
           src={BgImage2}
           alt="Background"
