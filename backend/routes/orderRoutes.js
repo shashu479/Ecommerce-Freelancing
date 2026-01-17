@@ -5,6 +5,7 @@ const Product = require("../models/Product");
 const VendorOrder = require("../models/VendorOrder");
 const Vendor = require("../models/Vendor");
 const { protect, admin } = require("../middleware/authMiddleware");
+const { invalidateCache } = require("../config/cache");
 
 // Helper function to get commission rate based on vendor's plan
 const getCommissionRate = (plan) => {
@@ -88,11 +89,15 @@ router.post("/", protect, async (req, res) => {
 
     const createdOrder = await order.save();
 
+    // Clear caches when new order is created
+    invalidateCache.orders();
+    invalidateCache.vendors();
+
     // ===== CREATE VENDOR ORDERS FOR VENDOR PRODUCTS =====
     // Get product details to check which ones are vendor products
     const productIds = orderItems.map((item) => item.product);
     const products = await Product.find({ _id: { $in: productIds } }).populate(
-      "vendor"
+      "vendor",
     );
 
     // Group items by vendor
@@ -100,7 +105,7 @@ router.post("/", protect, async (req, res) => {
 
     for (const item of orderItems) {
       const product = products.find(
-        (p) => p._id.toString() === item.product.toString()
+        (p) => p._id.toString() === item.product.toString(),
       );
 
       if (product && product.isVendorProduct && product.vendor) {
@@ -132,12 +137,15 @@ router.post("/", protect, async (req, res) => {
     for (const [vendorId, vendorData] of vendorItemsMap) {
       const vendor = await Vendor.findById(vendorId);
       const commissionRate = getCommissionRate(
-        vendor?.subscription?.plan || "starter"
+        vendor?.subscription?.plan || "starter",
       );
       const commission = (vendorData.subtotal * commissionRate) / 100;
       const netAmount = vendorData.subtotal - commission;
 
-      const vendorTax = itemsPrice > 0 ? (vendorData.subtotal / itemsPrice) * (taxPrice || 0) : 0;
+      const vendorTax =
+        itemsPrice > 0
+          ? (vendorData.subtotal / itemsPrice) * (taxPrice || 0)
+          : 0;
 
       const vendorOrder = new VendorOrder({
         order: createdOrder._id,
@@ -176,12 +184,13 @@ router.post("/", protect, async (req, res) => {
             totalEarnings: 0,
             totalCommissionPaid: 0,
             totalPayouts: 0,
-            transactions: []
+            transactions: [],
           };
         }
 
         // Add to pending balance
-        vendor.wallet.pendingBalance = (vendor.wallet.pendingBalance || 0) + netAmount;
+        vendor.wallet.pendingBalance =
+          (vendor.wallet.pendingBalance || 0) + netAmount;
 
         await vendor.save();
       }
@@ -247,10 +256,7 @@ router.get("/analytics", protect, admin, async (req, res) => {
 
     const totalRevenue = orders
       .filter((o) => !["Cancelled", "Returned", "Refunded"].includes(o.status))
-      .reduce(
-        (acc, order) => acc + (order.totalPrice || 0),
-        0
-      );
+      .reduce((acc, order) => acc + (order.totalPrice || 0), 0);
 
     // Order Status Distribution (for pie chart)
     const ordersByStatus = orders.reduce((acc, order) => {
@@ -261,10 +267,18 @@ router.get("/analytics", protect, admin, async (req, res) => {
 
     // Completed vs Pending
     const completedOrders = orders.filter((o) =>
-      ["Delivered", "Shipped"].includes(o.status)
+      ["Delivered", "Shipped"].includes(o.status),
     ).length;
     const pendingOrders = orders.filter(
-      (o) => !["Delivered", "Shipped", "Closed", "Cancelled", "Returned", "Refunded"].includes(o.status)
+      (o) =>
+        ![
+          "Delivered",
+          "Shipped",
+          "Closed",
+          "Cancelled",
+          "Returned",
+          "Refunded",
+        ].includes(o.status),
     ).length;
     const completedRevenue = orders
       .filter((o) => ["Delivered", "Shipped"].includes(o.status))
@@ -272,7 +286,14 @@ router.get("/analytics", protect, admin, async (req, res) => {
     const pendingRevenue = orders
       .filter(
         (o) =>
-          !["Delivered", "Shipped", "Closed", "Cancelled", "Returned", "Refunded"].includes(o.status)
+          ![
+            "Delivered",
+            "Shipped",
+            "Closed",
+            "Cancelled",
+            "Returned",
+            "Refunded",
+          ].includes(o.status),
       )
       .reduce((acc, o) => acc + o.totalPrice, 0);
 
@@ -280,8 +301,8 @@ router.get("/analytics", protect, admin, async (req, res) => {
     const salesByDate = await Order.aggregate([
       {
         $match: {
-          status: { $nin: ["Cancelled", "Returned", "Refunded"] }
-        }
+          status: { $nin: ["Cancelled", "Returned", "Refunded"] },
+        },
       },
       {
         $group: {
@@ -308,24 +329,26 @@ router.get("/analytics", protect, admin, async (req, res) => {
     });
 
     // Update with order data - exclude cancelled
-    orders.filter(o => !["Cancelled", "Returned", "Refunded"].includes(o.status)).forEach((order) => {
-      order.orderItems.forEach((item) => {
-        const productName = item.name;
-        if (!productStats[productName]) {
-          // Handle case where product name in order might differ slightly or product deleted but exists in order
-          productStats[productName] = {
-            name: productName,
-            totalQuantity: 0,
-            totalRevenue: 0,
-            orderCount: 0,
-          };
-        }
-        productStats[productName].totalQuantity += item.quantity || 0;
-        productStats[productName].totalRevenue +=
-          (item.price || 0) * (item.quantity || 0);
-        productStats[productName].orderCount += 1;
+    orders
+      .filter((o) => !["Cancelled", "Returned", "Refunded"].includes(o.status))
+      .forEach((order) => {
+        order.orderItems.forEach((item) => {
+          const productName = item.name;
+          if (!productStats[productName]) {
+            // Handle case where product name in order might differ slightly or product deleted but exists in order
+            productStats[productName] = {
+              name: productName,
+              totalQuantity: 0,
+              totalRevenue: 0,
+              orderCount: 0,
+            };
+          }
+          productStats[productName].totalQuantity += item.quantity || 0;
+          productStats[productName].totalRevenue +=
+            (item.price || 0) * (item.quantity || 0);
+          productStats[productName].orderCount += 1;
+        });
       });
-    });
 
     const productArray = Object.values(productStats);
 
@@ -348,8 +371,8 @@ router.get("/analytics", protect, admin, async (req, res) => {
     const monthlyTrend = await Order.aggregate([
       {
         $match: {
-          status: { $nin: ["Cancelled", "Returned", "Refunded"] }
-        }
+          status: { $nin: ["Cancelled", "Returned", "Refunded"] },
+        },
       },
       {
         $group: {
@@ -439,7 +462,10 @@ router.put("/:id/status", protect, admin, async (req, res) => {
           // Deduct from pending balance
           const vendor = await Vendor.findById(vendorOrder.vendor);
           if (vendor && vendor.wallet) {
-            vendor.wallet.pendingBalance = Math.max(0, (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount);
+            vendor.wallet.pendingBalance = Math.max(
+              0,
+              (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount,
+            );
             await vendor.save();
           }
         }
@@ -479,8 +505,12 @@ router.put("/:id/status", protect, admin, async (req, res) => {
             }
 
             // Move from pending to available balance
-            vendor.wallet.pendingBalance = Math.max(0, (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount);
-            vendor.wallet.balance = (vendor.wallet.balance || 0) + vendorOrder.netAmount;
+            vendor.wallet.pendingBalance = Math.max(
+              0,
+              (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount,
+            );
+            vendor.wallet.balance =
+              (vendor.wallet.balance || 0) + vendorOrder.netAmount;
             vendor.wallet.totalEarnings =
               (vendor.wallet.totalEarnings || 0) + vendorOrder.netAmount;
             vendor.wallet.totalCommissionPaid =
@@ -516,7 +546,7 @@ router.put("/:id/status", protect, admin, async (req, res) => {
               (vendor.metrics.completedOrders || 0) + 1;
             vendor.metrics.pendingOrders = Math.max(
               0,
-              (vendor.metrics.pendingOrders || 0) - 1
+              (vendor.metrics.pendingOrders || 0) - 1,
             );
             vendor.metrics.totalRevenue =
               (vendor.metrics.totalRevenue || 0) + vendorOrder.subtotal;
@@ -534,6 +564,10 @@ router.put("/:id/status", protect, admin, async (req, res) => {
       req.io.emit("order-status-updated", updatedOrder);
     }
 
+    // Clear caches when order status is updated
+    invalidateCache.orders();
+    invalidateCache.vendors();
+
     res.json(updatedOrder);
   } catch (error) {
     console.error("Order status update error:", error);
@@ -547,7 +581,7 @@ router.put("/:id/status", protect, admin, async (req, res) => {
 router.get("/track/:id", async (req, res) => {
   try {
     const order = await Order.findById(req.params.id).select(
-      "status totalPrice orderItems createdAt isDelivered deliveredAt"
+      "status totalPrice orderItems createdAt isDelivered deliveredAt",
     );
     if (order) {
       res.json(order);
@@ -572,16 +606,23 @@ router.post("/:id/return", protect, async (req, res) => {
     }
 
     // Ensure user owns the order
-    if (order.user.toString() !== req.user._id.toString() && !req.user.isAdmin) {
+    if (
+      order.user.toString() !== req.user._id.toString() &&
+      !req.user.isAdmin
+    ) {
       return res.status(401).json({ message: "Not authorized" });
     }
 
     if (order.status !== "Delivered" && order.status !== "delivered") {
-      return res.status(400).json({ message: "Only delivered orders can be returned" });
+      return res
+        .status(400)
+        .json({ message: "Only delivered orders can be returned" });
     }
 
     if (order.returnStatus !== "None") {
-      return res.status(400).json({ message: "Return already requested or processed" });
+      return res
+        .status(400)
+        .json({ message: "Return already requested or processed" });
     }
 
     // Update Main Order
@@ -602,7 +643,10 @@ router.post("/:id/return", protect, async (req, res) => {
 
       // Emit event to vendor
       if (req.io) {
-        req.io.emit(`vendor-return-requested-${vendorOrder.vendor}`, vendorOrder);
+        req.io.emit(
+          `vendor-return-requested-${vendorOrder.vendor}`,
+          vendorOrder,
+        );
       }
     }
 
@@ -629,9 +673,17 @@ router.post("/:id/cancel", protect, async (req, res) => {
     }
 
     // Allow cancellation only if not shipped yet
-    const nonCancellableStatuses = ['Shipped', 'Out for Delivery', 'Delivered', 'Cancelled', 'Returned'];
+    const nonCancellableStatuses = [
+      "Shipped",
+      "Out for Delivery",
+      "Delivered",
+      "Cancelled",
+      "Returned",
+    ];
     if (nonCancellableStatuses.includes(order.status)) {
-      return res.status(400).json({ message: `Cannot cancel order with status: ${order.status}` });
+      return res
+        .status(400)
+        .json({ message: `Cannot cancel order with status: ${order.status}` });
     }
 
     // 1. Update Main Order
@@ -651,13 +703,13 @@ router.post("/:id/cancel", protect, async (req, res) => {
       await RefundLog.create({
         order: order._id,
         user: req.user._id,
-        initiatedBy: 'User',
+        initiatedBy: "User",
         actorId: req.user._id,
         amount: refundAmount,
         deliveryCharge: order.shippingPrice || 0,
         totalRefundableAmount: refundAmount,
-        reason: 'User Cancelled Order',
-        status: 'Completed'
+        reason: "User Cancelled Order",
+        status: "Completed",
       });
 
       // Refund User (Wallet or Razorpay)
@@ -665,30 +717,38 @@ router.post("/:id/cancel", protect, async (req, res) => {
       const paymentService = require("../services/paymentService");
       const user = await User.findById(req.user._id);
 
-      let refundType = 'wallet';
+      let refundType = "wallet";
 
       if (user) {
         // Check for Razorpay Refund
-        const isOnlinePayment = order.paymentMethod === 'Online' || order.paymentMethod === 'Razorpay';
+        const isOnlinePayment =
+          order.paymentMethod === "Online" ||
+          order.paymentMethod === "Razorpay";
 
         if (isOnlinePayment && order.paymentResult?.id) {
           try {
-            await paymentService.refundPayment(order.paymentResult.id, order.refundAmount);
-            refundType = 'razorpay';
+            await paymentService.refundPayment(
+              order.paymentResult.id,
+              order.refundAmount,
+            );
+            refundType = "razorpay";
           } catch (err) {
-            console.error("Razorpay Refund Failed (Cancel), falling back to Wallet:", err);
-            refundType = 'wallet';
+            console.error(
+              "Razorpay Refund Failed (Cancel), falling back to Wallet:",
+              err,
+            );
+            refundType = "wallet";
           }
         }
 
-        if (refundType === 'wallet') {
+        if (refundType === "wallet") {
           user.walletBalance = (user.walletBalance || 0) + order.refundAmount;
           if (!user.walletTransactions) user.walletTransactions = [];
           user.walletTransactions.push({
             type: "refund",
             amount: order.refundAmount,
             description: `Refund for Cancelled Order #${order._id.toString().slice(-8)}`,
-            date: new Date()
+            date: new Date(),
           });
           await user.save();
         }
@@ -703,8 +763,8 @@ router.post("/:id/cancel", protect, async (req, res) => {
 
     for (const vendorOrder of vendorOrders) {
       try {
-        if (vendorOrder.status !== 'cancelled') {
-          vendorOrder.status = 'cancelled';
+        if (vendorOrder.status !== "cancelled") {
+          vendorOrder.status = "cancelled";
           vendorOrder.cancelledAt = new Date();
 
           // Deduct from Vendor Pending Balance
@@ -720,29 +780,36 @@ router.post("/:id/cancel", protect, async (req, res) => {
                 totalEarnings: 0,
                 totalCommissionPaid: 0,
                 totalPayouts: 0,
-                transactions: []
+                transactions: [],
               };
             }
             if (!vendor.wallet.transactions) vendor.wallet.transactions = [];
 
-            // Only deduct if pending balance is sufficient or handle negative? 
+            // Only deduct if pending balance is sufficient or handle negative?
             // Usually pendingBalance should have this amount if flow is correct.
-            vendor.wallet.pendingBalance = Math.max(0, (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount);
+            vendor.wallet.pendingBalance = Math.max(
+              0,
+              (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount,
+            );
 
             // Add transaction record
             vendor.wallet.transactions.push({
-              type: 'adjustment', // Changed from 'pending_cancelled' to match enum if strict, though Schema has 'adjustment'
+              type: "adjustment", // Changed from 'pending_cancelled' to match enum if strict, though Schema has 'adjustment'
               amount: vendorOrder.netAmount,
               description: `User Cancelled Order #${vendorOrder._id.toString().slice(-8)}`,
               orderId: vendorOrder._id,
-              status: 'completed',
-              balanceAfter: vendor.wallet.balance
+              status: "completed",
+              balanceAfter: vendor.wallet.balance,
             });
 
             // Update metrics
             if (!vendor.metrics) vendor.metrics = {};
-            vendor.metrics.pendingOrders = Math.max(0, (vendor.metrics.pendingOrders || 0) - 1);
-            vendor.metrics.cancelledOrders = (vendor.metrics.cancelledOrders || 0) + 1;
+            vendor.metrics.pendingOrders = Math.max(
+              0,
+              (vendor.metrics.pendingOrders || 0) - 1,
+            );
+            vendor.metrics.cancelledOrders =
+              (vendor.metrics.cancelledOrders || 0) + 1;
 
             await vendor.save();
           }
@@ -750,7 +817,7 @@ router.post("/:id/cancel", protect, async (req, res) => {
           // Cancel Shiprocket Order if exists
           if (vendorOrder.trackingNumber) {
             try {
-              const shiprocketService = require('../services/shiprocketService');
+              const shiprocketService = require("../services/shiprocketService");
               await shiprocketService.cancelOrder(vendorOrder.trackingNumber);
             } catch (err) {
               console.error("Shiprocket Cancel Failed", err);
@@ -760,16 +827,21 @@ router.post("/:id/cancel", protect, async (req, res) => {
           await vendorOrder.save();
         }
       } catch (voError) {
-        console.error(`Failed to update vendor order ${vendorOrder._id}:`, voError);
+        console.error(
+          `Failed to update vendor order ${vendorOrder._id}:`,
+          voError,
+        );
         // Continue to next vendor order even if one fails
       }
     }
 
     res.json({ message: "Order cancelled successfully", order });
-
   } catch (error) {
     console.error("Cancel Order Error:", error);
-    res.status(500).json({ message: "Server error preventing cancellation", error: error.message });
+    res.status(500).json({
+      message: "Server error preventing cancellation",
+      error: error.message,
+    });
   }
 });
 
@@ -800,32 +872,39 @@ router.post("/:id/admin/refund", protect, admin, async (req, res) => {
     await RefundLog.create({
       order: order._id,
       user: order.user,
-      initiatedBy: 'Admin',
+      initiatedBy: "Admin",
       actorId: req.user._id,
       amount: refundAmount,
       deliveryCharge: order.shippingPrice || 0,
       totalRefundableAmount: refundAmount,
-      reason: 'Admin Force Refund',
-      status: 'Completed'
+      reason: "Admin Force Refund",
+      status: "Completed",
     });
 
-    let refundType = 'wallet';
+    let refundType = "wallet";
 
     if (user) {
       // Check for Razorpay Refund
-      const isOnlinePayment = order.paymentMethod === 'Online' || order.paymentMethod === 'Razorpay';
+      const isOnlinePayment =
+        order.paymentMethod === "Online" || order.paymentMethod === "Razorpay";
 
       if (isOnlinePayment && order.paymentResult?.id) {
         try {
-          await paymentService.refundPayment(order.paymentResult.id, refundAmount);
-          refundType = 'razorpay';
+          await paymentService.refundPayment(
+            order.paymentResult.id,
+            refundAmount,
+          );
+          refundType = "razorpay";
         } catch (err) {
-          console.error("Razorpay Refund Failed (Admin), falling back to Wallet:", err);
-          refundType = 'wallet';
+          console.error(
+            "Razorpay Refund Failed (Admin), falling back to Wallet:",
+            err,
+          );
+          refundType = "wallet";
         }
       }
 
-      if (refundType === 'wallet') {
+      if (refundType === "wallet") {
         user.walletBalance = (user.walletBalance || 0) + refundAmount;
         user.walletTransactions.push({
           type: "refund",
@@ -855,44 +934,55 @@ router.post("/:id/admin/refund", protect, admin, async (req, res) => {
               totalEarnings: 0,
               totalCommissionPaid: 0,
               totalPayouts: 0,
-              transactions: []
+              transactions: [],
             };
           }
 
           if (vendorOrder.payoutStatus === "completed") {
             // Order was delivered - deduct from available balance
             // Allow negative balance to ensure Admin recovers funds
-            vendor.wallet.balance = (vendor.wallet.balance || 0) - vendorOrder.netAmount;
+            vendor.wallet.balance =
+              (vendor.wallet.balance || 0) - vendorOrder.netAmount;
 
             // Deduct earnings and commission paid (Metrics can stay > 0 or reflect reality, usually > 0 is preferred for 'Totals' but this is 'Total Earnings' so maybe it should go down)
-            vendor.wallet.totalEarnings = Math.max(0, (vendor.wallet.totalEarnings || 0) - vendorOrder.netAmount);
-            vendor.wallet.totalCommissionPaid = Math.max(0, (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission);
+            vendor.wallet.totalEarnings = Math.max(
+              0,
+              (vendor.wallet.totalEarnings || 0) - vendorOrder.netAmount,
+            );
+            vendor.wallet.totalCommissionPaid = Math.max(
+              0,
+              (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission,
+            );
 
             vendor.wallet.transactions.push({
-              type: 'admin_refund_debit',
+              type: "admin_refund_debit",
               amount: -vendorOrder.netAmount, // Negative amount for debit
               description: `Admin Refund Deduction for Order #${vendorOrder._id.toString().slice(-8)}`,
               orderId: vendorOrder._id,
-              status: 'completed',
-              balanceAfter: vendor.wallet.balance
+              status: "completed",
+              balanceAfter: vendor.wallet.balance,
             });
           } else {
             // Order was pending - deduct from pending balance
-            vendor.wallet.pendingBalance = Math.max(0, (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount);
+            vendor.wallet.pendingBalance = Math.max(
+              0,
+              (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount,
+            );
 
             vendor.wallet.transactions.push({
-              type: 'admin_pending_cancelled',
+              type: "admin_pending_cancelled",
               amount: -vendorOrder.netAmount, // Negative amount for consistency
               description: `Admin Cancelled Pending Order #${vendorOrder._id.toString().slice(-8)}`,
               orderId: vendorOrder._id,
-              status: 'completed',
-              balanceAfter: vendor.wallet.balance // Showing Realized Balance here might be confusing if it didn't change, but it is accurate state.
+              status: "completed",
+              balanceAfter: vendor.wallet.balance, // Showing Realized Balance here might be confusing if it didn't change, but it is accurate state.
             });
           }
 
           // Update metrics
           vendor.metrics = vendor.metrics || {};
-          vendor.metrics.refundedOrders = (vendor.metrics.refundedOrders || 0) + 1;
+          vendor.metrics.refundedOrders =
+            (vendor.metrics.refundedOrders || 0) + 1;
 
           await vendor.save();
         }

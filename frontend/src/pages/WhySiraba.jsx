@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Leaf, Award, MapPin, Globe, CheckCircle, ShieldCheck } from 'lucide-react';
+import { Leaf, Award, MapPin, Globe, CheckCircle, ShieldCheck, Sprout, Microscope, FileCheck, Plane } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import BgImage2 from '../assets/bgimage2.png';
 import SaffronImage from '../assets/Saffron.png';
@@ -39,8 +39,13 @@ const WhySiraba = () => {
             </section>
 
             {/* The Four Pillars */}
-            <section className="py-16 px-4 bg-secondary/5">
-                <div className="max-w-7xl mx-auto">
+            <section className="py-24 px-4 bg-secondary/5 relative overflow-hidden">
+                {/* Decorative Elements */}
+                <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+                    <div className="absolute top-[-10%] left-[-5%] w-96 h-96 bg-accent/10 rounded-full blur-3xl"></div>
+                    <div className="absolute bottom-[-10%] right-[-5%] w-96 h-96 bg-primary/5 rounded-full blur-3xl"></div>
+                </div>
+                <div className="max-w-7xl mx-auto relative z-10">
                     <div className="text-center mb-16">
                         <span className="text-accent text-sm tracking-[0.2em] uppercase font-bold">Our Foundation</span>
                         <h2 className="font-heading text-4xl md:text-5xl text-primary font-bold mt-4">The Four Pillars of Siraba</h2>
@@ -80,7 +85,7 @@ const WhySiraba = () => {
                             </p>
                             <ul className="text-text-secondary text-xs list-disc list-inside space-y-1 mb-2">
                                 <li><strong>Kashmir</strong> for saffron</li>
-                                <li><strong>Ladakh & Other State</strong> for premium compounded and processed hing</li>
+                                <li><strong>Ladakh & Other States</strong> for premium compounded and processed hing</li>
                             </ul>
                             <p className="text-text-secondary text-sm italic">
                                 This ensures unmatched aroma, potency, and quality.
@@ -102,6 +107,60 @@ const WhySiraba = () => {
                             <p className="text-text-secondary text-sm leading-relaxed">
                                 This is why international buyers trust Siraba Organic — not just as a spice brand, but as a globally reliable food partner.
                             </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* The Journey of Purity */}
+            <section className="py-24 px-4 bg-surface">
+                <div className="max-w-7xl mx-auto">
+                    <div className="text-center mb-16">
+                        <h2 className="font-heading text-3xl md:text-5xl text-primary font-bold">The Journey of Verified Purity</h2>
+                        <p className="text-text-secondary mt-4 max-w-2xl mx-auto font-light">
+                            From the pristine fields of Kashmir to your doorstep, every step is rigorously monitored.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {/* Step 1 */}
+                        <div className="relative p-6 pt-12 border border-secondary/10 rounded-sm hover:border-accent/30 transition-all group bg-background/50">
+                            <div className="absolute top-0 left-6 -translate-y-1/2 bg-surface p-2 border border-secondary/10 rounded-full group-hover:border-accent/50 transition-colors shadow-sm">
+                                <span className="flex items-center justify-center w-10 h-10 bg-green-50 rounded-full text-green-600 font-bold font-heading">01</span>
+                            </div>
+                            <Sprout className="w-8 h-8 text-green-600 mb-4 opacity-80" />
+                            <h4 className="font-heading text-lg font-bold text-primary mb-2">Sustainable Sourcing</h4>
+                            <p className="text-sm text-text-secondary font-light">Cultivation in the nutrient-rich soils of Kashmir and Ladakh using traditional organic methods.</p>
+                        </div>
+
+                        {/* Step 2 */}
+                        <div className="relative p-6 pt-12 border border-secondary/10 rounded-sm hover:border-accent/30 transition-all group bg-background/50">
+                            <div className="absolute top-0 left-6 -translate-y-1/2 bg-surface p-2 border border-secondary/10 rounded-full group-hover:border-accent/50 transition-colors shadow-sm">
+                                <span className="flex items-center justify-center w-10 h-10 bg-blue-50 rounded-full text-blue-600 font-bold font-heading">02</span>
+                            </div>
+                            <Microscope className="w-8 h-8 text-blue-600 mb-4 opacity-80" />
+                            <h4 className="font-heading text-lg font-bold text-primary mb-2">Rigorous Testing</h4>
+                            <p className="text-sm text-text-secondary font-light">Each lot undergoes rigorous chemical and physical analysis in accredited independent labs.</p>
+                        </div>
+
+                        {/* Step 3 */}
+                        <div className="relative p-6 pt-12 border border-secondary/10 rounded-sm hover:border-accent/30 transition-all group bg-background/50">
+                            <div className="absolute top-0 left-6 -translate-y-1/2 bg-surface p-2 border border-secondary/10 rounded-full group-hover:border-accent/50 transition-colors shadow-sm">
+                                <span className="flex items-center justify-center w-10 h-10 bg-purple-50 rounded-full text-purple-600 font-bold font-heading">03</span>
+                            </div>
+                            <FileCheck className="w-8 h-8 text-purple-600 mb-4 opacity-80" />
+                            <h4 className="font-heading text-lg font-bold text-primary mb-2">Export Compliance</h4>
+                            <p className="text-sm text-text-secondary font-light">Documentation, sealing, and certification to meet standard international trade protocols.</p>
+                        </div>
+
+                        {/* Step 4 */}
+                        <div className="relative p-6 pt-12 border border-secondary/10 rounded-sm hover:border-accent/30 transition-all group bg-background/50">
+                            <div className="absolute top-0 left-6 -translate-y-1/2 bg-surface p-2 border border-secondary/10 rounded-full group-hover:border-accent/50 transition-colors shadow-sm">
+                                <span className="flex items-center justify-center w-10 h-10 bg-amber-50 rounded-full text-amber-600 font-bold font-heading">04</span>
+                            </div>
+                            <Plane className="w-8 h-8 text-amber-600 mb-4 opacity-80" />
+                            <h4 className="font-heading text-lg font-bold text-primary mb-2">Global Delivery</h4>
+                            <p className="text-sm text-text-secondary font-light">Secure, trackable shipment ensures the product arrives with its purity intact.</p>
                         </div>
                     </div>
                 </div>

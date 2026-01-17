@@ -4,6 +4,11 @@ const Product = require("../models/Product");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { protectVendor } = require("../middleware/vendorMiddleware");
+const { productCache, invalidateCache } = require("../config/cache");
+const {
+  cacheListMiddleware,
+  cacheByIdMiddleware,
+} = require("../middleware/cacheMiddleware");
 
 // Middleware to protect routes
 const protect = async (req, res, next) => {
@@ -37,74 +42,79 @@ const admin = (req, res, next) => {
 // @desc    Fetch all products
 // @route   GET /api/products
 // @access  Public
-router.get("/", async (req, res) => {
-  try {
-    const keyword = req.query.keyword
-      ? {
-        name: {
-          $regex: req.query.keyword,
-          $options: "i",
-        },
+router.get(
+  "/",
+  cacheListMiddleware(productCache, "products:list"),
+  async (req, res) => {
+    try {
+      const keyword = req.query.keyword
+        ? {
+            name: {
+              $regex: req.query.keyword,
+              $options: "i",
+            },
+          }
+        : {};
+
+      const category = req.query.category
+        ? { category: req.query.category }
+        : {};
+
+      let priceFilter = {};
+      if (req.query.minPrice || req.query.maxPrice) {
+        priceFilter.price = {};
+        if (req.query.minPrice)
+          priceFilter.price.$gte = Number(req.query.minPrice);
+        if (req.query.maxPrice)
+          priceFilter.price.$lte = Number(req.query.maxPrice);
       }
-      : {};
 
-    const category = req.query.category ? { category: req.query.category } : {};
+      // Simplified query using computed isPublic field (fast with index)
+      const query = {
+        isPublic: true,
+        ...keyword,
+        ...category,
+        ...priceFilter,
+      };
 
-    let priceFilter = {};
-    if (req.query.minPrice || req.query.maxPrice) {
-      priceFilter.price = {};
-      if (req.query.minPrice)
-        priceFilter.price.$gte = Number(req.query.minPrice);
-      if (req.query.maxPrice)
-        priceFilter.price.$lte = Number(req.query.maxPrice);
+      let sort = {};
+      if (req.query.sort) {
+        if (req.query.sort === "price-asc") sort = { price: 1 };
+        else if (req.query.sort === "price-desc") sort = { price: -1 };
+        else if (req.query.sort === "newest") sort = { createdAt: -1 };
+      }
+
+      const products = await Product.find(query)
+        .sort(sort)
+        .populate("vendor", "businessName")
+        .lean();
+      res.json(products);
+    } catch (error) {
+      console.error("Product query error:", error);
+      res.status(500).json({ message: error.message });
     }
-
-    // Only show active products and approved vendor products
-    // Admin products (isVendorProduct: false) are always shown
-    // Vendor products must be approved AND active
-    const visibilityFilter = {
-      $or: [
-        { isVendorProduct: { $ne: true } }, // Admin products
-        { isVendorProduct: true, vendorStatus: "approved", isActive: true }, // Approved vendor products
-      ],
-    };
-
-    const query = {
-      ...keyword,
-      ...category,
-      ...priceFilter,
-      ...visibilityFilter,
-    };
-
-    let sort = {};
-    if (req.query.sort) {
-      if (req.query.sort === "price-asc") sort = { price: 1 };
-      else if (req.query.sort === "price-desc") sort = { price: -1 };
-      else if (req.query.sort === "newest") sort = { createdAt: -1 };
-    }
-
-    const products = await Product.find(query).sort(sort).populate("vendor", "businessName");
-    res.json(products);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+  },
+);
 
 // @desc    Fetch single product
 // @route   GET /api/products/:id
 // @access  Public
-router.get("/:id", async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (product) {
-      res.json(product);
-    } else {
-      res.status(404).json({ message: "Product not found" });
+router.get(
+  "/:id",
+  cacheByIdMiddleware(productCache, "products:detail"),
+  async (req, res) => {
+    try {
+      const product = await Product.findById(req.params.id).lean();
+      if (product) {
+        res.json(product);
+      } else {
+        res.status(404).json({ message: "Product not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ message: error.message });
     }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+  },
+);
 
 // @desc    Create a product
 // @route   POST /api/products
@@ -113,6 +123,8 @@ router.post("/", protect, admin, async (req, res) => {
   try {
     const product = new Product(req.body);
     const createdProduct = await product.save();
+    // Clear product cache when new product is created
+    invalidateCache.products();
     res.status(201).json(createdProduct);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -128,6 +140,8 @@ router.put("/:id", protect, admin, async (req, res) => {
     if (product) {
       Object.assign(product, req.body);
       const updatedProduct = await product.save();
+      // Clear product cache when product is updated
+      invalidateCache.products();
       res.json(updatedProduct);
     } else {
       res.status(404).json({ message: "Product not found" });
@@ -145,6 +159,8 @@ router.delete("/:id", protect, admin, async (req, res) => {
     const product = await Product.findById(req.params.id);
     if (product) {
       await product.deleteOne();
+      // Clear product cache when product is deleted
+      invalidateCache.products();
       res.json({ message: "Product removed" });
     } else {
       res.status(404).json({ message: "Product not found" });
@@ -165,7 +181,7 @@ router.post("/:id/reviews", protect, async (req, res) => {
 
     if (product) {
       const alreadyReviewed = product.reviews.find(
-        (r) => r.user.toString() === req.user._id.toString()
+        (r) => r.user.toString() === req.user._id.toString(),
       );
 
       if (alreadyReviewed) {
@@ -188,23 +204,25 @@ router.post("/:id/reviews", protect, async (req, res) => {
         product.reviews.length;
 
       await product.save();
+      // Clear product cache when review is added
+      invalidateCache.products();
 
       // Get the newly added review with its _id
       const newReview = product.reviews[product.reviews.length - 1];
 
       // Emit real-time event
       if (req.io) {
-        req.io.emit('new_review', {
+        req.io.emit("new_review", {
           productId: product._id,
           review: newReview,
-          rating: product.rating
+          rating: product.rating,
         });
       }
 
       res.status(201).json({
         message: "Review added",
         review: newReview,
-        rating: product.rating
+        rating: product.rating,
       });
     } else {
       res.status(404).json({ message: "Product not found" });
@@ -222,8 +240,13 @@ router.put("/:id/reviews/:reviewId/reply", protectVendor, async (req, res) => {
     const product = await Product.findById(req.params.id);
 
     if (product) {
-      if (product.vendor && product.vendor.toString() !== req.vendor._id.toString()) {
-        return res.status(401).json({ message: "Not authorized to reply to this product's reviews" });
+      if (
+        product.vendor &&
+        product.vendor.toString() !== req.vendor._id.toString()
+      ) {
+        return res.status(401).json({
+          message: "Not authorized to reply to this product's reviews",
+        });
       }
 
       const review = product.reviews.id(req.params.reviewId);
@@ -231,14 +254,16 @@ router.put("/:id/reviews/:reviewId/reply", protectVendor, async (req, res) => {
         review.vendorReply = reply;
         review.vendorReplyDate = Date.now();
         await product.save();
+        // Clear product cache when vendor replies to review
+        invalidateCache.products();
 
         // Emit real-time event
         if (req.io) {
-          req.io.emit('review_reply', {
+          req.io.emit("review_reply", {
             productId: product._id,
             reviewId: review._id,
             reply: reply,
-            replyDate: review.vendorReplyDate
+            replyDate: review.vendorReplyDate,
           });
         }
 

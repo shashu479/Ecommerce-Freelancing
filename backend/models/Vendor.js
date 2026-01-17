@@ -122,7 +122,7 @@ const vendorProductSchema = mongoose.Schema(
     batchNumber: { type: String },
     expiryDate: { type: Date },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Bank Details Schema
@@ -259,14 +259,47 @@ const vendorSchema = mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-// Index for search
+// ==================== INDEXES ====================
+// Indexes aligned with ACTUAL query patterns
+
+// NOTE: email index created automatically by unique: true - no duplicate needed
+
+// 1. Public vendor shop (vendorRoutes.js line 2043)
+// Query: { "shopSettings.shopSlug": slug, status: "approved", "shopSettings.isPublished": true }
+vendorSchema.index(
+  {
+    "shopSettings.shopSlug": 1,
+    status: 1,
+    "shopSettings.isPublished": 1,
+  },
+  { sparse: true },
+);
+
+// 2. Admin vendor list (adminRoutes.js line 17)
+// Query: { status?, search in businessName/email/contactPerson }
+// Sort: createdAt: -1
+vendorSchema.index({ status: 1, createdAt: -1 });
+
+// 3. Text search for admin vendor search
 vendorSchema.index({
   businessName: "text",
   email: "text",
   contactPerson: "text",
 });
+
+// 4. Reset password token
+vendorSchema.index({ resetPasswordToken: 1 }, { sparse: true });
+
+// 5. Active vendors
+vendorSchema.index({ isActive: 1 });
+
+// 6. Onboarding tracking
+vendorSchema.index({ onboardingComplete: 1 });
+
+// 7. Subscription queries
+vendorSchema.index({ "subscription.isActive": 1 });
 
 module.exports = mongoose.model("Vendor", vendorSchema);

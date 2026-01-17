@@ -7,7 +7,7 @@ const Product = require("../models/Product");
 const User = require("../models/User");
 const { protect, admin } = require("../middleware/authMiddleware");
 const RefundLog = require("../models/RefundLog");
-
+const { invalidateCache } = require("../config/cache");
 
 // ================== VENDOR MANAGEMENT ==================
 
@@ -120,33 +120,37 @@ router.put("/vendors/:id/status", protect, admin, async (req, res) => {
 
     await vendor.save();
 
+    // Clear vendor cache when status is updated
+    invalidateCache.vendors();
+
     // Send email notification (placeholder) and DB notification
     const Notification = require("../models/Notification");
-    let notifyType = 'info';
-    let notifyTitle = 'Status Update';
+    let notifyType = "info";
+    let notifyTitle = "Status Update";
     let notifyMessage = `Your vendor account status has been updated to ${status}.`;
 
-    if (status === 'approved') {
-      notifyType = 'success';
-      notifyTitle = 'Account Approved!';
-      notifyMessage = 'Congratulations! Your vendor account has been approved. You can now log in and start selling.';
-    } else if (status === 'rejected') {
-      notifyType = 'error';
-      notifyTitle = 'Account Rejected';
-      notifyMessage = `Your account application was rejected. Reason: ${rejectionReason || 'Not specified'}`;
-    } else if (status === 'suspended') {
-      notifyType = 'warning';
-      notifyTitle = 'Account Suspended';
-      notifyMessage = 'Your account has been suspended by the administrator.';
+    if (status === "approved") {
+      notifyType = "success";
+      notifyTitle = "Account Approved!";
+      notifyMessage =
+        "Congratulations! Your vendor account has been approved. You can now log in and start selling.";
+    } else if (status === "rejected") {
+      notifyType = "error";
+      notifyTitle = "Account Rejected";
+      notifyMessage = `Your account application was rejected. Reason: ${rejectionReason || "Not specified"}`;
+    } else if (status === "suspended") {
+      notifyType = "warning";
+      notifyTitle = "Account Suspended";
+      notifyMessage = "Your account has been suspended by the administrator.";
     }
 
     try {
       await Notification.create({
         recipient: vendor._id,
-        recipientModel: 'Vendor',
+        recipientModel: "Vendor",
         type: notifyType,
         title: notifyTitle,
-        message: notifyMessage
+        message: notifyMessage,
       });
     } catch (err) {
       console.error("Failed to create notification", err);
@@ -193,7 +197,7 @@ router.put(
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // @desc    Update vendor commission rate
@@ -323,8 +327,8 @@ router.get("/analytics/vendors", protect, admin, async (req, res) => {
     const vendorRevenue = await VendorOrder.aggregate([
       {
         $match: {
-          status: "delivered" // Only count commission for fulfilled orders
-        }
+          status: "delivered", // Only count commission for fulfilled orders
+        },
       },
       {
         $group: {
@@ -340,14 +344,14 @@ router.get("/analytics/vendors", protect, admin, async (req, res) => {
       newVendorsThisMonth,
       vendorsByStatus: vendorsByStatus.reduce(
         (acc, item) => ({ ...acc, [item._id]: item.count }),
-        {}
+        {},
       ),
       topVendors,
       vendorRevenue: vendorRevenue[0] || {
         totalRevenue: 0,
         totalCommission: 0,
       },
-      adminEarnings: vendorRevenue[0]?.totalCommission || 0 // Deprecated calculation, see below
+      adminEarnings: vendorRevenue[0]?.totalCommission || 0, // Deprecated calculation, see below
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -377,8 +381,8 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
     const revenueStats = await Order.aggregate([
       {
         $match: {
-          status: { $nin: ["Cancelled", "cancelled"] }
-        }
+          status: { $nin: ["Cancelled", "cancelled"] },
+        },
       },
       {
         $group: {
@@ -393,24 +397,23 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
     const grossRevenueStats = await Order.aggregate([
       {
         $match: {
-          status: { $nin: ["Cancelled", "cancelled"] }
-        }
+          status: { $nin: ["Cancelled", "cancelled"] },
+        },
       },
-      { $group: { _id: null, total: { $sum: "$totalPrice" } } }
+      { $group: { _id: null, total: { $sum: "$totalPrice" } } },
     ]);
     const totalGrossRevenue = grossRevenueStats[0]?.total || 0;
 
     // Total Refunds (Source of Truth: RefundLogs)
     const refundStats = await RefundLog.aggregate([
-      { $match: { status: 'Completed' } }, // Only count completed refunds
-      { $group: { _id: null, total: { $sum: "$amount" } } }
+      { $match: { status: "Completed" } }, // Only count completed refunds
+      { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalRefunds = refundStats[0]?.total || 0;
 
-
     // Total Vendor Payouts
     const payoutStats = await Vendor.aggregate([
-      { $group: { _id: null, total: { $sum: "$wallet.totalPayouts" } } }
+      { $group: { _id: null, total: { $sum: "$wallet.totalPayouts" } } },
     ]);
     const totalPayouts = payoutStats[0]?.total || 0;
 
@@ -422,8 +425,8 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
       {
         $match: {
           createdAt: { $gte: startOfMonth },
-          status: { $nin: ["Cancelled", "Returned", "Refunded"] }
-        }
+          status: { $nin: ["Cancelled", "Returned", "Refunded"] },
+        },
       },
       {
         $group: {
@@ -456,8 +459,8 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
     const topProducts = await Order.aggregate([
       {
         $match: {
-          status: { $nin: ["Cancelled", "Returned", "Refunded"] }
-        }
+          status: { $nin: ["Cancelled", "Returned", "Refunded"] },
+        },
       },
       { $unwind: "$orderItems" },
       {
@@ -482,8 +485,8 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
       {
         $match: {
           createdAt: { $gte: twelveMonthsAgo },
-          status: { $nin: ["Cancelled", "Returned", "Refunded"] }
-        }
+          status: { $nin: ["Cancelled", "Returned", "Refunded"] },
+        },
       },
       {
         $group: {
@@ -503,9 +506,9 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
       {
         $group: {
           _id: null,
-          totalEscrow: { $sum: "$wallet.pendingBalance" }
-        }
-      }
+          totalEscrow: { $sum: "$wallet.pendingBalance" },
+        },
+      },
     ]);
     const totalEscrowAmount = escrowStats[0]?.totalEscrow || 0;
 
@@ -516,7 +519,7 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
         total: totalOrders,
         byStatus: ordersByStatus.reduce(
           (acc, item) => ({ ...acc, [item._id]: item.count }),
-          {}
+          {},
         ),
       },
       revenue: {
@@ -527,7 +530,7 @@ router.get("/analytics/overview", protect, admin, async (req, res) => {
         gross: totalGrossRevenue,
         refunds: totalRefunds,
         payouts: totalPayouts,
-        adminBalance: adminCashBalance
+        adminBalance: adminCashBalance,
       },
       users: {
         total: totalUsers,
@@ -623,7 +626,7 @@ router.get("/approvals", protect, admin, async (req, res) => {
           vendorId: vendor._id,
           vendorName: vendor.businessName,
           vendorEmail: vendor.email,
-        }))
+        })),
     );
 
     res.json({
@@ -706,7 +709,7 @@ router.put("/vendor-orders/:id/payout", protect, admin, async (req, res) => {
 router.get("/vendor-products", protect, admin, async (req, res) => {
   try {
     const query = { isVendorProduct: true };
-    // If status is passed as query param (even empty), use it logic. If completely undefined, default to pending? 
+    // If status is passed as query param (even empty), use it logic. If completely undefined, default to pending?
     // Actually the destructuring `status = "pending"` forces a default.
     // Let's remove default from destructuring and handle logic manually.
 
@@ -786,9 +789,13 @@ router.put("/vendor-products/:productId", protect, admin, async (req, res) => {
 
     await product.save();
 
+    // Clear caches when product status is updated
+    invalidateCache.products();
+    invalidateCache.vendors();
+
     const updatedProduct = await Product.findById(product._id).populate(
       "vendor",
-      "businessName email contactPerson"
+      "businessName email contactPerson",
     );
 
     res.json(updatedProduct);
@@ -839,90 +846,94 @@ router.get("/payouts", protect, admin, async (req, res) => {
 // @desc    Approve/Reject payout
 // @route   PUT /api/admin/payouts/:vendorId/:transactionId
 // @access  Private/Admin
-router.put("/payouts/:vendorId/:transactionId", protect, admin, async (req, res) => {
-  try {
-    const { status, note } = req.body; // status: 'completed' or 'rejected'
-    const vendor = await Vendor.findById(req.params.vendorId);
+router.put(
+  "/payouts/:vendorId/:transactionId",
+  protect,
+  admin,
+  async (req, res) => {
+    try {
+      const { status, note } = req.body; // status: 'completed' or 'rejected'
+      const vendor = await Vendor.findById(req.params.vendorId);
 
-    if (!vendor) {
-      return res.status(404).json({ message: "Vendor not found" });
+      if (!vendor) {
+        return res.status(404).json({ message: "Vendor not found" });
+      }
+
+      const transaction = vendor.wallet.transactions.id(
+        req.params.transactionId,
+      );
+
+      if (!transaction) {
+        return res.status(404).json({ message: "Transaction not found" });
+      }
+
+      if (transaction.type !== "payout") {
+        return res
+          .status(400)
+          .json({ message: "This is not a payout transaction" });
+      }
+
+      if (transaction.status !== "pending") {
+        return res
+          .status(400)
+          .json({ message: `Transaction is already ${transaction.status}` });
+      }
+
+      const payoutAmount = Math.abs(transaction.amount);
+
+      if (status === "completed") {
+        // Approve the payout
+        transaction.status = "completed";
+        if (note) transaction.description += ` | Admin Note: ${note}`;
+        vendor.wallet.lastPayoutDate = new Date();
+
+        // Create notification
+        const Notification = require("../models/Notification");
+        await Notification.create({
+          recipient: vendor._id,
+          recipientModel: "Vendor",
+          type: "success",
+          title: "Payout Approved",
+          message: `Your payout of ₹${payoutAmount} has been approved and will be transferred to your bank account within 3-5 business days.`,
+        });
+      } else if (status === "rejected" || status === "failed") {
+        // Reject the payout and refund
+        transaction.status = "failed"; // Must use 'failed' to match schema enum
+        if (note) transaction.description += ` | Admin Note: ${note}`;
+
+        vendor.wallet.balance += payoutAmount;
+        vendor.wallet.totalPayouts -= payoutAmount;
+
+        // Add refund transaction
+        vendor.wallet.transactions.push({
+          type: "adjustment",
+          amount: payoutAmount,
+          description: `Refund for rejected payout #${req.params.transactionId.slice(-6)}${note ? ` - ${note}` : ""}`,
+          status: "completed",
+          balanceAfter: vendor.wallet.balance,
+        });
+
+        // Create notification
+        const Notification = require("../models/Notification");
+        await Notification.create({
+          recipient: vendor._id,
+          recipientModel: "Vendor",
+          type: "warning",
+          title: "Payout Rejected",
+          message: `Your payout request of ₹${payoutAmount} has been rejected.${note ? ` Reason: ${note}` : ""} The amount has been refunded to your wallet.`,
+        });
+      } else {
+        return res.status(400).json({ message: "Invalid status value" });
+      }
+
+      await vendor.save();
+      res.json({ message: "Payout updated successfully", transaction });
+    } catch (error) {
+      console.error("Payout update error:", error);
+      res.status(500).json({ message: error.message });
     }
-
-    const transaction = vendor.wallet.transactions.id(
-      req.params.transactionId
-    );
-
-    if (!transaction) {
-      return res.status(404).json({ message: "Transaction not found" });
-    }
-
-    if (transaction.type !== "payout") {
-      return res
-        .status(400)
-        .json({ message: "This is not a payout transaction" });
-    }
-
-    if (transaction.status !== "pending") {
-      return res
-        .status(400)
-        .json({ message: `Transaction is already ${transaction.status}` });
-    }
-
-    const payoutAmount = Math.abs(transaction.amount);
-
-    if (status === "completed") {
-      // Approve the payout
-      transaction.status = "completed";
-      if (note) transaction.description += ` | Admin Note: ${note}`;
-      vendor.wallet.lastPayoutDate = new Date();
-
-      // Create notification
-      const Notification = require("../models/Notification");
-      await Notification.create({
-        recipient: vendor._id,
-        recipientModel: 'Vendor',
-        type: 'success',
-        title: 'Payout Approved',
-        message: `Your payout of ₹${payoutAmount} has been approved and will be transferred to your bank account within 3-5 business days.`
-      });
-
-    } else if (status === "rejected" || status === "failed") {
-      // Reject the payout and refund
-      transaction.status = "failed"; // Must use 'failed' to match schema enum
-      if (note) transaction.description += ` | Admin Note: ${note}`;
-
-      vendor.wallet.balance += payoutAmount;
-      vendor.wallet.totalPayouts -= payoutAmount;
-
-      // Add refund transaction
-      vendor.wallet.transactions.push({
-        type: 'adjustment',
-        amount: payoutAmount,
-        description: `Refund for rejected payout #${req.params.transactionId.slice(-6)}${note ? ` - ${note}` : ''}`,
-        status: 'completed',
-        balanceAfter: vendor.wallet.balance
-      });
-
-      // Create notification
-      const Notification = require("../models/Notification");
-      await Notification.create({
-        recipient: vendor._id,
-        recipientModel: 'Vendor',
-        type: 'warning',
-        title: 'Payout Rejected',
-        message: `Your payout request of ₹${payoutAmount} has been rejected.${note ? ` Reason: ${note}` : ''} The amount has been refunded to your wallet.`
-      });
-    } else {
-      return res.status(400).json({ message: "Invalid status value" });
-    }
-
-    await vendor.save();
-    res.json({ message: "Payout updated successfully", transaction });
-  } catch (error) {
-    console.error("Payout update error:", error);
-    res.status(500).json({ message: error.message });
-  }
-});
+  },
+);
 
 // ================== RETURNS MANAGEMENT ==================
 
@@ -933,12 +944,13 @@ router.get("/returns", protect, admin, async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
     const query = {
-      returnStatus: { $ne: 'None' }
+      returnStatus: { $ne: "None" },
     };
 
     // Filter by specific return status if provided
     if (status) {
-      query.returnStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+      query.returnStatus =
+        status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     }
 
     const returns = await VendorOrder.find(query)
@@ -953,28 +965,30 @@ router.get("/returns", protect, admin, async (req, res) => {
 
     // Count by status
     const counts = {
-      requested: await VendorOrder.countDocuments({ returnStatus: 'Requested' }),
-      approved: await VendorOrder.countDocuments({ returnStatus: 'Approved' }),
-      rejected: await VendorOrder.countDocuments({ returnStatus: 'Rejected' }),
-      returned: await VendorOrder.countDocuments({ returnStatus: 'Returned' }),
-      refunded: await VendorOrder.countDocuments({ returnStatus: 'Refunded' }),
+      requested: await VendorOrder.countDocuments({
+        returnStatus: "Requested",
+      }),
+      approved: await VendorOrder.countDocuments({ returnStatus: "Approved" }),
+      rejected: await VendorOrder.countDocuments({ returnStatus: "Rejected" }),
+      returned: await VendorOrder.countDocuments({ returnStatus: "Returned" }),
+      refunded: await VendorOrder.countDocuments({ returnStatus: "Refunded" }),
     };
 
     // Transform data for frontend
-    const formattedReturns = returns.map(ret => ({
+    const formattedReturns = returns.map((ret) => ({
       _id: ret._id,
       orderId: ret.order?._id?.toString() || ret._id.toString(),
-      vendorName: ret.vendor?.businessName || 'Unknown Vendor',
-      vendorEmail: ret.vendor?.email || '',
-      productName: ret.items?.[0]?.name || 'Multiple Items',
+      vendorName: ret.vendor?.businessName || "Unknown Vendor",
+      vendorEmail: ret.vendor?.email || "",
+      productName: ret.items?.[0]?.name || "Multiple Items",
       itemCount: ret.items?.length || 0,
-      reason: ret.returnReason || 'No reason provided',
+      reason: ret.returnReason || "No reason provided",
       status: ret.returnStatus,
-      customerComment: ret.customerNotes || '',
+      customerComment: ret.customerNotes || "",
       createdAt: ret.returnRequestedAt || ret.updatedAt,
       subtotal: ret.subtotal,
       items: ret.items,
-      shippingAddress: ret.shippingAddress
+      shippingAddress: ret.shippingAddress,
     }));
 
     res.json({
@@ -982,7 +996,7 @@ router.get("/returns", protect, admin, async (req, res) => {
       page: parseInt(page),
       pages: Math.ceil(total / limit),
       total,
-      counts
+      counts,
     });
   } catch (error) {
     console.error("Error fetching returns:", error);
@@ -998,8 +1012,16 @@ router.put("/returns/:id", protect, admin, async (req, res) => {
     const { status, adminNote } = req.body;
 
     // Validate status
-    const validStatuses = ['Requested', 'Approved', 'Rejected', 'Returned', 'Refunded', 'Completed'];
-    const normalizedStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    const validStatuses = [
+      "Requested",
+      "Approved",
+      "Rejected",
+      "Returned",
+      "Refunded",
+      "Completed",
+    ];
+    const normalizedStatus =
+      status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 
     if (!validStatuses.includes(normalizedStatus)) {
       return res.status(400).json({ message: "Invalid return status" });
@@ -1012,7 +1034,10 @@ router.put("/returns/:id", protect, admin, async (req, res) => {
     }
 
     // If status is Completed, process the financial refund
-    if (normalizedStatus === 'Completed' && vendorOrder.returnStatus !== 'Completed') {
+    if (
+      normalizedStatus === "Completed" &&
+      vendorOrder.returnStatus !== "Completed"
+    ) {
       // 1. Refund the User
       // We need to fetch the FULL order if not populated properly to check payment method
       let fullOrder = vendorOrder.order;
@@ -1020,32 +1045,43 @@ router.put("/returns/:id", protect, admin, async (req, res) => {
         fullOrder = await Order.findById(vendorOrder.order);
       }
 
-      const User = require('../models/User');
+      const User = require("../models/User");
       // Fix: Use fullOrder.user to ensure we get the correct User ID
       const user = fullOrder ? await User.findById(fullOrder.user) : null;
 
-      let refundType = 'wallet';
+      let refundType = "wallet";
       // Check online payment for potential source refund
-      if (fullOrder && (fullOrder.paymentMethod === 'Online' || fullOrder.paymentMethod === 'Razorpay') && fullOrder.paymentResult?.id) {
+      if (
+        fullOrder &&
+        (fullOrder.paymentMethod === "Online" ||
+          fullOrder.paymentMethod === "Razorpay") &&
+        fullOrder.paymentResult?.id
+      ) {
         try {
-          const paymentService = require('../services/paymentService');
+          const paymentService = require("../services/paymentService");
           // Attempt Razorpay Refund
-          await paymentService.refundPayment(fullOrder.paymentResult.id, vendorOrder.subtotal);
-          refundType = 'razorpay';
+          await paymentService.refundPayment(
+            fullOrder.paymentResult.id,
+            vendorOrder.subtotal,
+          );
+          refundType = "razorpay";
         } catch (err) {
-          console.error("Admin Refund: Razorpay Refund Failed, falling back to Wallet:", err);
-          refundType = 'wallet';
+          console.error(
+            "Admin Refund: Razorpay Refund Failed, falling back to Wallet:",
+            err,
+          );
+          refundType = "wallet";
         }
       }
 
-      if (user && refundType === 'wallet') {
+      if (user && refundType === "wallet") {
         user.walletBalance = (user.walletBalance || 0) + vendorOrder.subtotal;
         if (!user.walletTransactions) user.walletTransactions = [];
         user.walletTransactions.push({
-          type: 'refund',
+          type: "refund",
           amount: vendorOrder.subtotal,
           description: `Refund for Order #${fullOrder._id.toString().slice(-8)} (Admin Processed)`,
-          date: new Date()
+          date: new Date(),
         });
         await user.save();
       }
@@ -1060,71 +1096,100 @@ router.put("/returns/:id", protect, admin, async (req, res) => {
             totalEarnings: 0,
             totalCommissionPaid: 0,
             totalPayouts: 0,
-            transactions: []
+            transactions: [],
           };
         }
 
-        const deductionAmount = vendorOrder.netAmount || (vendorOrder.subtotal - vendorOrder.commission);
+        const deductionAmount =
+          vendorOrder.netAmount ||
+          vendorOrder.subtotal - vendorOrder.commission;
 
-        if (vendorOrder.payoutStatus === 'completed') {
+        if (vendorOrder.payoutStatus === "completed") {
           // Money was already added to available balance
-          vendor.wallet.balance = Math.max(0, (vendor.wallet.balance || 0) - deductionAmount);
-          vendor.wallet.totalEarnings = Math.max(0, (vendor.wallet.totalEarnings || 0) - deductionAmount);
-          vendor.wallet.totalCommissionPaid = Math.max(0, (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission);
+          vendor.wallet.balance = Math.max(
+            0,
+            (vendor.wallet.balance || 0) - deductionAmount,
+          );
+          vendor.wallet.totalEarnings = Math.max(
+            0,
+            (vendor.wallet.totalEarnings || 0) - deductionAmount,
+          );
+          vendor.wallet.totalCommissionPaid = Math.max(
+            0,
+            (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission,
+          );
 
           vendor.wallet.transactions.push({
-            type: 'refund_debit',
+            type: "refund_debit",
             amount: deductionAmount,
             description: `Refund Deduction for Order #${vendorOrder._id.toString().slice(-8)} (Admin)`,
             orderId: vendorOrder._id,
-            status: 'completed',
-            balanceAfter: vendor.wallet.balance
+            status: "completed",
+            balanceAfter: vendor.wallet.balance,
           });
         } else {
           // Money matches pending
-          vendor.wallet.pendingBalance = Math.max(0, (vendor.wallet.pendingBalance || 0) - deductionAmount);
+          vendor.wallet.pendingBalance = Math.max(
+            0,
+            (vendor.wallet.pendingBalance || 0) - deductionAmount,
+          );
 
           vendor.wallet.transactions.push({
-            type: 'pending_cancelled',
+            type: "pending_cancelled",
             amount: deductionAmount,
             description: `Pending Order #${vendorOrder._id.toString().slice(-8)} refunded (Admin)`,
             orderId: vendorOrder._id,
-            status: 'completed',
-            balanceAfter: vendor.wallet.balance
+            status: "completed",
+            balanceAfter: vendor.wallet.balance,
           });
         }
 
         // Update metrics
         vendor.metrics = vendor.metrics || {};
-        vendor.metrics.refundedOrders = (vendor.metrics.refundedOrders || 0) + 1;
+        vendor.metrics.refundedOrders =
+          (vendor.metrics.refundedOrders || 0) + 1;
         // Deduct revenue and commission from metrics
-        vendor.metrics.totalRevenue = Math.max(0, (vendor.metrics.totalRevenue || 0) - vendorOrder.subtotal);
-        vendor.metrics.totalCommission = Math.max(0, (vendor.metrics.totalCommission || 0) - vendorOrder.commission);
+        vendor.metrics.totalRevenue = Math.max(
+          0,
+          (vendor.metrics.totalRevenue || 0) - vendorOrder.subtotal,
+        );
+        vendor.metrics.totalCommission = Math.max(
+          0,
+          (vendor.metrics.totalCommission || 0) - vendorOrder.commission,
+        );
 
         await vendor.save();
       }
 
       // Update vendorOrder payout status
-      vendorOrder.payoutStatus = 'refunded';
+      vendorOrder.payoutStatus = "refunded";
     }
 
     vendorOrder.returnStatus = normalizedStatus;
 
     // If approved/completed, update order status too
-    if (normalizedStatus === 'Returned' || normalizedStatus === 'Approved' || normalizedStatus === 'Refunded' || normalizedStatus === 'Completed') {
-      vendorOrder.status = 'returned';
+    if (
+      normalizedStatus === "Returned" ||
+      normalizedStatus === "Approved" ||
+      normalizedStatus === "Refunded" ||
+      normalizedStatus === "Completed"
+    ) {
+      vendorOrder.status = "returned";
     }
 
     await vendorOrder.save();
 
     // Sync to main order
-    const mainOrder = await Order.findById(vendorOrder.order._id || vendorOrder.order);
+    const mainOrder = await Order.findById(
+      vendorOrder.order._id || vendorOrder.order,
+    );
     if (mainOrder) {
-      if (normalizedStatus === 'Completed') {
+      if (normalizedStatus === "Completed") {
         mainOrder.isRefunded = true;
-        mainOrder.refundAmount = (mainOrder.refundAmount || 0) + vendorOrder.subtotal;
-        mainOrder.returnStatus = 'Completed';
-        mainOrder.status = 'Returned';
+        mainOrder.refundAmount =
+          (mainOrder.refundAmount || 0) + vendorOrder.subtotal;
+        mainOrder.returnStatus = "Completed";
+        mainOrder.status = "Returned";
       } else {
         mainOrder.returnStatus = normalizedStatus;
       }
@@ -1135,15 +1200,20 @@ router.put("/returns/:id", protect, admin, async (req, res) => {
     const Notification = require("../models/Notification");
     await Notification.create({
       recipient: vendorOrder.vendor,
-      recipientModel: 'Vendor',
-      type: normalizedStatus === 'Approved' ? 'success' : normalizedStatus === 'Rejected' ? 'warning' : 'info',
-      title: 'Return Status Updated',
-      message: `Return request for order #${vendorOrder._id.toString().slice(-8)} has been ${normalizedStatus.toLowerCase()}.${adminNote ? ` Note: ${adminNote}` : ''}`
+      recipientModel: "Vendor",
+      type:
+        normalizedStatus === "Approved"
+          ? "success"
+          : normalizedStatus === "Rejected"
+            ? "warning"
+            : "info",
+      title: "Return Status Updated",
+      message: `Return request for order #${vendorOrder._id.toString().slice(-8)} has been ${normalizedStatus.toLowerCase()}.${adminNote ? ` Note: ${adminNote}` : ""}`,
     });
 
     res.json({
       message: "Return status updated successfully",
-      returnStatus: vendorOrder.returnStatus
+      returnStatus: vendorOrder.returnStatus,
     });
   } catch (error) {
     console.error("Error updating return status:", error);

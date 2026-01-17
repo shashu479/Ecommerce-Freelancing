@@ -15,13 +15,13 @@ const reviewSchema = mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const productSchema = mongoose.Schema(
   {
     name: { type: String, required: true },
-    slug: { type: String, required: true, unique: true },
+    slug: { type: String, required: true, unique: true }, // unique creates index - don't duplicate
     description: { type: String, required: true },
     fullDescription: { type: String },
     price: { type: Number, required: true },
@@ -63,10 +63,79 @@ const productSchema = mongoose.Schema(
     stockQuantity: { type: Number, default: 0 },
     sku: { type: String },
     isActive: { type: Boolean, default: true },
+
+    // Computed field for fast public visibility queries
+    // Replaces complex $or query with simple equality check
+    isPublic: { type: Boolean, default: true, index: true },
   },
   {
     timestamps: true,
-  }
+  },
 );
+
+// Middleware to automatically set isPublic field
+productSchema.pre("save", function () {
+  if (this.isVendorProduct) {
+    // Vendor products: public only if approved AND active
+    this.isPublic = this.vendorStatus === "approved" && this.isActive === true;
+  } else {
+    // Admin products: always public
+    this.isPublic = true;
+  }
+});
+
+// ==================== INDEXES ====================
+// Indexes optimized for actual query patterns
+
+// 1. CRITICAL: Main product listing (productRoutes.js)
+// OLD SLOW QUERY: { $or: [{ isVendorProduct: {$ne: true} }, { isVendorProduct: true, vendorStatus: "approved", isActive: true }] }
+// NEW FAST QUERY: { isPublic: true, category?, price? }
+// This single index replaces the complex $or and enables IXSCAN
+productSchema.index({
+  isPublic: 1,
+  category: 1,
+  price: 1,
+});
+
+// 2. Vendor's own products (vendorRoutes.js line 305)
+// Query: { vendor: ObjectId, isVendorProduct: true, vendorStatus? }
+productSchema.index({
+  vendor: 1,
+  isVendorProduct: 1,
+  vendorStatus: 1,
+  createdAt: -1,
+});
+
+// 3. Public vendor shop (vendorRoutes.js line 2084)
+// Query: { vendor: ObjectId, isPublic: true }
+productSchema.index({
+  vendor: 1,
+  isPublic: 1,
+});
+
+// 4. Admin vendor products approval (adminRoutes.js line 731)
+// Query: { isVendorProduct: true, vendorStatus, vendor? }
+productSchema.index({
+  isVendorProduct: 1,
+  vendorStatus: 1,
+  vendor: 1,
+});
+
+// 5. Text search
+productSchema.index({
+  name: "text",
+  description: "text",
+  fullDescription: "text",
+});
+
+// 6. Price sorting
+productSchema.index({ price: 1 });
+
+// 7. Newest products
+productSchema.index({ createdAt: -1 });
+
+// NOTE:
+// - slug index created by unique: true (no duplicate)
+// - isPublic index created by index: true in schema
 
 module.exports = mongoose.model("Product", productSchema);

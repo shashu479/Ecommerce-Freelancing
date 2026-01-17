@@ -12,6 +12,12 @@ const {
   approvedVendor,
   onboardingComplete,
 } = require("../middleware/vendorMiddleware");
+const {
+  vendorCache,
+  productCache,
+  invalidateCache,
+} = require("../config/cache");
+const { cacheByIdMiddleware } = require("../middleware/cacheMiddleware");
 
 // Generate Vendor JWT
 const generateVendorToken = (vendorId) => {
@@ -116,7 +122,9 @@ router.post("/login", async (req, res) => {
 // @access  Private/Vendor
 router.get("/profile", protectVendor, async (req, res) => {
   try {
-    const vendor = await Vendor.findById(req.vendor._id).select("-password");
+    const vendor = await Vendor.findById(req.vendor._id)
+      .select("-password")
+      .lean();
     res.json(vendor);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -155,6 +163,8 @@ router.put("/profile", protectVendor, async (req, res) => {
       }
 
       const updatedVendor = await vendor.save();
+      // Clear vendor cache when profile is updated
+      invalidateCache.vendors();
       res.json({
         _id: updatedVendor._id,
         email: updatedVendor.email,
@@ -217,6 +227,8 @@ router.put("/onboarding", protectVendor, async (req, res) => {
     }
 
     await vendor.save();
+    // Clear vendor cache when onboarding is updated
+    invalidateCache.vendors();
     res.json({
       onboardingStep: vendor.onboardingStep,
       onboardingComplete: vendor.onboardingComplete,
@@ -271,7 +283,7 @@ router.delete("/compliance/:docId", protectVendor, async (req, res) => {
   try {
     const vendor = await Vendor.findById(req.vendor._id);
     vendor.complianceDocuments = vendor.complianceDocuments.filter(
-      (doc) => doc._id.toString() !== req.params.docId
+      (doc) => doc._id.toString() !== req.params.docId,
     );
     await vendor.save();
     res.json({ message: "Document removed" });
@@ -295,7 +307,8 @@ router.get("/products", protectVendor, async (req, res) => {
     const products = await Product.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
 
     const total = await Product.countDocuments(query);
 
@@ -361,6 +374,10 @@ router.post("/products", protectVendor, approvedVendor, async (req, res) => {
       vendorStatus: "pending", // Requires admin approval
       isActive: true,
     });
+
+    // Clear caches when vendor creates a product
+    invalidateCache.products();
+    invalidateCache.vendors();
 
     res.status(201).json(product);
   } catch (error) {
@@ -438,11 +455,14 @@ router.put(
       }
 
       await product.save();
+      // Clear caches when vendor updates a product
+      invalidateCache.products();
+      invalidateCache.vendors();
       res.json(product);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // @desc    Delete vendor product
@@ -465,11 +485,14 @@ router.delete(
       }
 
       await product.deleteOne();
+      // Clear caches when vendor deletes a product
+      invalidateCache.products();
+      invalidateCache.vendors();
       res.json({ message: "Product deleted successfully" });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // ================== INVENTORY ROUTES ==================
@@ -480,7 +503,7 @@ router.delete(
 router.get("/inventory", protectVendor, approvedVendor, async (req, res) => {
   try {
     const vendor = await Vendor.findById(req.vendor._id).populate(
-      "inventory.product"
+      "inventory.product",
     );
     res.json(vendor.inventory);
   } catch (error) {
@@ -507,7 +530,7 @@ router.post("/inventory", protectVendor, approvedVendor, async (req, res) => {
 
     // Check if product already in inventory
     const existingItem = vendor.inventory.find(
-      (item) => item.product?.toString() === productId
+      (item) => item.product?.toString() === productId,
     );
     if (existingItem) {
       return res.status(400).json({ message: "Product already in inventory" });
@@ -527,7 +550,7 @@ router.post("/inventory", protectVendor, approvedVendor, async (req, res) => {
 
     await vendor.save();
     const updatedVendor = await Vendor.findById(req.vendor._id).populate(
-      "inventory.product"
+      "inventory.product",
     );
     res.status(201).json(updatedVendor.inventory);
   } catch (error) {
@@ -577,7 +600,7 @@ router.put(
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // @desc    Remove inventory item
@@ -591,14 +614,14 @@ router.delete(
     try {
       const vendor = await Vendor.findById(req.vendor._id);
       vendor.inventory = vendor.inventory.filter(
-        (item) => item._id.toString() !== req.params.itemId
+        (item) => item._id.toString() !== req.params.itemId,
       );
       await vendor.save();
       res.json({ message: "Inventory item removed" });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // @desc    Bulk update stock
@@ -629,7 +652,7 @@ router.put(
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // ================== ORDER ROUTES ==================
@@ -713,7 +736,7 @@ router.put(
       if (vendorNotes) vendorOrder.vendorNotes = vendorNotes;
 
       // SHIPROCKET INTEGRATION
-      const shiprocketService = require('../services/shiprocketService');
+      const shiprocketService = require("../services/shiprocketService");
 
       if (status === "confirmed" && previousStatus !== "confirmed") {
         try {
@@ -721,17 +744,22 @@ router.put(
             order_id: vendorOrder._id,
             order_date: vendorOrder.createdAt,
             pickup_location: "Primary",
-            billing_customer_name: vendorOrder.shippingAddress?.name || "Customer",
+            billing_customer_name:
+              vendorOrder.shippingAddress?.name || "Customer",
             billing_address: vendorOrder.shippingAddress?.address || "Address",
             billing_city: vendorOrder.shippingAddress?.city || "City",
-            billing_pincode: vendorOrder.shippingAddress?.postalCode || "000000",
+            billing_pincode:
+              vendorOrder.shippingAddress?.postalCode || "000000",
             billing_state: vendorOrder.shippingAddress?.state || "State",
             billing_country: "India",
             billing_email: "user@example.com", // Should get from user if possible
             billing_phone: vendorOrder.shippingAddress?.phone || "9999999999",
             payment_method: "Prepaid",
             sub_total: vendorOrder.subtotal,
-            length: 10, breadth: 10, height: 10, weight: 0.5
+            length: 10,
+            breadth: 10,
+            height: 10,
+            weight: 0.5,
           });
 
           if (srOrder) {
@@ -763,14 +791,16 @@ router.put(
         const Vendor = require("../models/Vendor");
         const vendor = await Vendor.findById(req.vendor._id);
         if (vendor && vendor.wallet) {
-          vendor.wallet.pendingBalance = Math.max(0,
-            (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount
+          vendor.wallet.pendingBalance = Math.max(
+            0,
+            (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount,
           );
 
           // Update metrics
           vendor.metrics = vendor.metrics || {};
-          vendor.metrics.pendingOrders = Math.max(0,
-            (vendor.metrics.pendingOrders || 0) - 1
+          vendor.metrics.pendingOrders = Math.max(
+            0,
+            (vendor.metrics.pendingOrders || 0) - 1,
           );
 
           // Add transaction record for "Lost Revenue" (negative) or just info?
@@ -811,19 +841,19 @@ router.put(
         if (mainOrder && mainOrder.user) {
           const user = await User.findById(mainOrder.user);
           if (user) {
-            const refundAmount = (vendorOrder.subtotal || 0) + (vendorOrder.tax || 0);
+            const refundAmount =
+              (vendorOrder.subtotal || 0) + (vendorOrder.tax || 0);
             user.walletBalance = (user.walletBalance || 0) + refundAmount;
             if (!user.walletTransactions) user.walletTransactions = [];
             user.walletTransactions.push({
-              type: 'refund',
+              type: "refund",
               amount: refundAmount,
               description: `Refund for Cancelled Order Item #${vendorOrder._id.toString().slice(-8)} (Inc. Tax)`,
-              date: new Date()
+              date: new Date(),
             });
             await user.save();
           }
         }
-
       } else if (status === "delivered" && previousStatus !== "delivered") {
         vendorOrder.deliveredAt = new Date();
 
@@ -844,8 +874,9 @@ router.put(
           // Move from pending to available balance
           // Note: Net Amount is (Subtotal - Commission)
 
-          vendor.wallet.pendingBalance = Math.max(0,
-            (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount
+          vendor.wallet.pendingBalance = Math.max(
+            0,
+            (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount,
           );
 
           // Credit only the Net Amount? Or Credit Subtotal and Debit Commission?
@@ -867,7 +898,10 @@ router.put(
 
           // New Logic:
           // Balance = Balance + Subtotal - Commission
-          vendor.wallet.balance = (vendor.wallet.balance || 0) + (vendorOrder.subtotal || 0) - (vendorOrder.commission || 0);
+          vendor.wallet.balance =
+            (vendor.wallet.balance || 0) +
+            (vendorOrder.subtotal || 0) -
+            (vendorOrder.commission || 0);
 
           vendor.wallet.totalEarnings =
             (vendor.wallet.totalEarnings || 0) + vendorOrder.netAmount;
@@ -883,7 +917,8 @@ router.put(
             description: `Order #${vendorOrder._id.toString().slice(-8)} delivered`,
             orderId: vendorOrder._id,
             status: "completed",
-            balanceAfter: (vendor.wallet.balance || 0) + (vendorOrder.commission || 0), // Balance before commission deduction
+            balanceAfter:
+              (vendor.wallet.balance || 0) + (vendorOrder.commission || 0), // Balance before commission deduction
           });
 
           // Add transaction record 2: Commission (Debit)
@@ -898,9 +933,14 @@ router.put(
 
           // Update metrics
           vendor.metrics = vendor.metrics || {};
-          vendor.metrics.completedOrders = (vendor.metrics.completedOrders || 0) + 1;
-          vendor.metrics.pendingOrders = Math.max(0, (vendor.metrics.pendingOrders || 0) - 1);
-          vendor.metrics.totalRevenue = (vendor.metrics.totalRevenue || 0) + vendorOrder.subtotal;
+          vendor.metrics.completedOrders =
+            (vendor.metrics.completedOrders || 0) + 1;
+          vendor.metrics.pendingOrders = Math.max(
+            0,
+            (vendor.metrics.pendingOrders || 0) - 1,
+          );
+          vendor.metrics.totalRevenue =
+            (vendor.metrics.totalRevenue || 0) + vendorOrder.subtotal;
 
           await vendor.save();
         }
@@ -949,7 +989,7 @@ router.put(
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // @desc    Update vendor return status
@@ -981,7 +1021,7 @@ router.put(
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // @desc    Process Refund for Vendor Order
@@ -996,50 +1036,59 @@ router.post(
       const vendorOrder = await VendorOrder.findOne({
         _id: req.params.id,
         vendor: req.vendor._id,
-      }).populate('order');
+      }).populate("order");
 
       if (!vendorOrder) {
         return res.status(404).json({ message: "Order not found" });
       }
 
-      if (vendorOrder.returnStatus === 'Completed') {
+      if (vendorOrder.returnStatus === "Completed") {
         return res.status(400).json({ message: "Already completed" });
       }
 
       // 1. Refund the User (Wallet or Razorpay)
-      const User = require('../models/User');
+      const User = require("../models/User");
       const user = await User.findById(vendorOrder.order.user);
-      const paymentService = require('../services/paymentService');
+      const paymentService = require("../services/paymentService");
 
-      let refundType = 'wallet';
+      let refundType = "wallet";
 
       if (user) {
         // Check for Razorpay Refund
         // Ensure paymentMethod checks 'Online' or specific provider tag used in paymentRoutes
-        const isOnlinePayment = vendorOrder.order.paymentMethod === 'Online' || vendorOrder.order.paymentMethod === 'Razorpay';
+        const isOnlinePayment =
+          vendorOrder.order.paymentMethod === "Online" ||
+          vendorOrder.order.paymentMethod === "Razorpay";
 
         if (isOnlinePayment && vendorOrder.order.paymentResult?.id) {
           try {
             // Attempt Razorpay Refund
-            await paymentService.refundPayment(vendorOrder.order.paymentResult.id, (vendorOrder.subtotal || 0) + (vendorOrder.tax || 0));
-            refundType = 'razorpay';
+            await paymentService.refundPayment(
+              vendorOrder.order.paymentResult.id,
+              (vendorOrder.subtotal || 0) + (vendorOrder.tax || 0),
+            );
+            refundType = "razorpay";
 
             // Optional: Log this action if User model supports non-balance transactions
             // For now, we only update wallet if refundType is 'wallet'
           } catch (err) {
-            console.error("Razorpay Refund Failed, falling back to Wallet:", err);
-            refundType = 'wallet';
+            console.error(
+              "Razorpay Refund Failed, falling back to Wallet:",
+              err,
+            );
+            refundType = "wallet";
           }
         }
 
-        if (refundType === 'wallet') {
-          const refundAmount = (vendorOrder.subtotal || 0) + (vendorOrder.tax || 0);
+        if (refundType === "wallet") {
+          const refundAmount =
+            (vendorOrder.subtotal || 0) + (vendorOrder.tax || 0);
           user.walletBalance = (user.walletBalance || 0) + refundAmount;
           user.walletTransactions.push({
-            type: 'refund',
+            type: "refund",
             amount: refundAmount,
             description: `Refund for Order #${vendorOrder.order._id.toString().slice(-8)} (Inc. Tax)`,
-            date: new Date()
+            date: new Date(),
           });
           await user.save();
         }
@@ -1056,53 +1105,64 @@ router.post(
             totalEarnings: 0,
             totalCommissionPaid: 0,
             totalPayouts: 0,
-            transactions: []
+            transactions: [],
           };
         }
 
-        if (vendorOrder.payoutStatus === 'completed') {
+        if (vendorOrder.payoutStatus === "completed") {
           // Order was already delivered and credited - deduct from balance
           // Allow negative balance
-          vendor.wallet.balance = (vendor.wallet.balance || 0) - vendorOrder.netAmount;
-          vendor.wallet.totalEarnings = Math.max(0, (vendor.wallet.totalEarnings || 0) - vendorOrder.netAmount);
+          vendor.wallet.balance =
+            (vendor.wallet.balance || 0) - vendorOrder.netAmount;
+          vendor.wallet.totalEarnings = Math.max(
+            0,
+            (vendor.wallet.totalEarnings || 0) - vendorOrder.netAmount,
+          );
           // Refund commission as well
-          vendor.wallet.totalCommissionPaid = Math.max(0, (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission);
+          vendor.wallet.totalCommissionPaid = Math.max(
+            0,
+            (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission,
+          );
 
           // Add refund debit transaction
           vendor.wallet.transactions.push({
-            type: 'refund_debit',
+            type: "refund_debit",
             amount: -vendorOrder.netAmount,
             description: `Refund Deduction for Order #${vendorOrder._id.toString().slice(-8)}`,
             orderId: vendorOrder._id,
-            status: 'completed',
-            balanceAfter: vendor.wallet.balance
+            status: "completed",
+            balanceAfter: vendor.wallet.balance,
           });
         } else {
           // Order was in pending - deduct from pending balance
-          vendor.wallet.pendingBalance = Math.max(0, (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount);
+          vendor.wallet.pendingBalance = Math.max(
+            0,
+            (vendor.wallet.pendingBalance || 0) - vendorOrder.netAmount,
+          );
 
           // Add pending refund transaction
           vendor.wallet.transactions.push({
-            type: 'pending_cancelled',
+            type: "pending_cancelled",
             amount: -vendorOrder.netAmount,
             description: `Pending Order #${vendorOrder._id.toString().slice(-8)} refunded`,
             orderId: vendorOrder._id,
-            status: 'completed',
-            balanceAfter: vendor.wallet.balance
+            status: "completed",
+            balanceAfter: vendor.wallet.balance,
           });
         }
 
         // Update metrics
         vendor.metrics = vendor.metrics || {};
-        vendor.metrics.refundedOrders = (vendor.metrics.refundedOrders || 0) + 1;
+        vendor.metrics.refundedOrders =
+          (vendor.metrics.refundedOrders || 0) + 1;
 
         await vendor.save();
       }
 
       // 3. Update Order Statuses
-      vendorOrder.status = 'returned'; // or 'refunded'
-      vendorOrder.returnStatus = 'Completed';
-      vendorOrder.payoutStatus = 'refunded'; // new status
+      vendorOrder.status = "returned"; // or 'refunded'
+      vendorOrder.returnStatus = "Completed";
+      vendorOrder.payoutStatus = "refunded"; // new status
       await vendorOrder.save();
 
       // Check if main order should also be marked refunded
@@ -1112,20 +1172,22 @@ router.post(
         // Simple logic: if a sub-order is refunded, mark main as partial refund or fully refunded?
         // Let's mark main valid refund
         mainOrder.isRefunded = true;
-        mainOrder.refundAmount = (mainOrder.refundAmount || 0) + vendorOrder.subtotal + (vendorOrder.tax || 0);
+        mainOrder.refundAmount =
+          (mainOrder.refundAmount || 0) +
+          vendorOrder.subtotal +
+          (vendorOrder.tax || 0);
         mainOrder.refundDate = new Date();
-        mainOrder.returnStatus = 'Completed';
-        mainOrder.status = 'Returned';
+        mainOrder.returnStatus = "Completed";
+        mainOrder.status = "Returned";
         await mainOrder.save();
       }
 
       res.json({ message: "Refund processed successfully", vendorOrder });
-
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // ================== RETURNS ROUTES ==================
@@ -1138,12 +1200,13 @@ router.get("/returns", protectVendor, approvedVendor, async (req, res) => {
     const { status, page = 1, limit = 20 } = req.query;
     const query = {
       vendor: req.vendor._id,
-      returnStatus: { $ne: 'None' } // Only get orders with return requests
+      returnStatus: { $ne: "None" }, // Only get orders with return requests
     };
 
     // Filter by specific return status if provided
     if (status) {
-      query.returnStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+      query.returnStatus =
+        status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
     }
 
     const returns = await VendorOrder.find(query)
@@ -1154,16 +1217,16 @@ router.get("/returns", protectVendor, approvedVendor, async (req, res) => {
       .limit(parseInt(limit));
 
     // Transform data for frontend
-    const formattedReturns = returns.map(ret => ({
+    const formattedReturns = returns.map((ret) => ({
       _id: ret._id,
       orderId: ret.order?._id?.toString() || ret._id.toString(),
-      productName: ret.items?.[0]?.name || 'Multiple Items',
-      reason: ret.returnReason || 'No reason provided',
-      status: ret.returnStatus?.toLowerCase() || 'pending',
-      customerComment: ret.customerNotes || '',
+      productName: ret.items?.[0]?.name || "Multiple Items",
+      reason: ret.returnReason || "No reason provided",
+      status: ret.returnStatus?.toLowerCase() || "pending",
+      customerComment: ret.customerNotes || "",
       createdAt: ret.returnRequestedAt || ret.updatedAt,
       subtotal: ret.subtotal,
-      items: ret.items
+      items: ret.items,
     }));
 
     res.json(formattedReturns);
@@ -1185,8 +1248,16 @@ router.put("/returns/:id", protectVendor, approvedVendor, async (req, res) => {
     }
 
     // Validate status
-    const validStatuses = ['Pending', 'Approved', 'Rejected', 'Processing', 'Completed', 'Refunded'];
-    const normalizedStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+    const validStatuses = [
+      "Pending",
+      "Approved",
+      "Rejected",
+      "Processing",
+      "Completed",
+      "Refunded",
+    ];
+    const normalizedStatus =
+      status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 
     if (!validStatuses.includes(normalizedStatus)) {
       return res.status(400).json({ message: "Invalid return status" });
@@ -1204,7 +1275,10 @@ router.put("/returns/:id", protectVendor, approvedVendor, async (req, res) => {
     // deleted premature assignment
 
     // If completed or approved, update order status too
-    if (normalizedStatus === 'Completed' && vendorOrder.returnStatus !== 'Completed') {
+    if (
+      normalizedStatus === "Completed" &&
+      vendorOrder.returnStatus !== "Completed"
+    ) {
       // --- FINANCIAL REFUND LOGIC START ---
       // 1. Refund the User
       let fullOrder = vendorOrder.order;
@@ -1213,22 +1287,33 @@ router.put("/returns/:id", protectVendor, approvedVendor, async (req, res) => {
         fullOrder = await Order.findById(vendorOrder.order);
       }
 
-      const User = require('../models/User');
+      const User = require("../models/User");
       // Fix: Use fullOrder.user (safe access), or fallback if somehow missing
       const user = fullOrder ? await User.findById(fullOrder.user) : null;
 
       // Calculate Refund Amount (Items + Tax)
       const refundAmount = (vendorOrder.subtotal || 0) + (vendorOrder.tax || 0);
 
-      let refundType = 'wallet';
-      if (fullOrder && (fullOrder.paymentMethod === 'Online' || fullOrder.paymentMethod === 'Razorpay') && fullOrder.paymentResult?.id) {
+      let refundType = "wallet";
+      if (
+        fullOrder &&
+        (fullOrder.paymentMethod === "Online" ||
+          fullOrder.paymentMethod === "Razorpay") &&
+        fullOrder.paymentResult?.id
+      ) {
         try {
-          const paymentService = require('../services/paymentService');
-          await paymentService.refundPayment(fullOrder.paymentResult.id, refundAmount);
-          refundType = 'razorpay';
+          const paymentService = require("../services/paymentService");
+          await paymentService.refundPayment(
+            fullOrder.paymentResult.id,
+            refundAmount,
+          );
+          refundType = "razorpay";
         } catch (err) {
-          console.error("Vendor Status Update Refund: Razorpay Refund Failed, falling back to Wallet:", err);
-          refundType = 'wallet';
+          console.error(
+            "Vendor Status Update Refund: Razorpay Refund Failed, falling back to Wallet:",
+            err,
+          );
+          refundType = "wallet";
         }
       }
 
@@ -1239,82 +1324,105 @@ router.put("/returns/:id", protectVendor, approvedVendor, async (req, res) => {
           order: fullOrder._id,
           vendorOrder: vendorOrder._id,
           user: user._id,
-          initiatedBy: 'Vendor',
+          initiatedBy: "Vendor",
           actorId: req.vendor._id,
           amount: refundAmount,
           deliveryCharge: 0, // Vendor orders typically don't carry the shipping charge in this context
           totalRefundableAmount: refundAmount,
-          reason: 'Vendor Processed Return',
-          status: 'Completed'
+          reason: "Vendor Processed Return",
+          status: "Completed",
         });
 
-        if (refundType === 'wallet') {
+        if (refundType === "wallet") {
           user.walletBalance = (user.walletBalance || 0) + refundAmount;
           if (!user.walletTransactions) user.walletTransactions = [];
           user.walletTransactions.push({
-            type: 'refund',
+            type: "refund",
             amount: refundAmount,
             description: `Refund for Order #${fullOrder._id.toString().slice(-8)} (Vendor Completed)`,
-            date: new Date()
+            date: new Date(),
           });
           await user.save();
         }
       }
-
 
       // 2. Debit the Vendor
       const vendor = await Vendor.findById(req.vendor._id);
       if (vendor) {
         if (!vendor.wallet) {
           vendor.wallet = {
-            balance: 0, pendingBalance: 0, totalEarnings: 0, totalCommissionPaid: 0, totalPayouts: 0, transactions: []
+            balance: 0,
+            pendingBalance: 0,
+            totalEarnings: 0,
+            totalCommissionPaid: 0,
+            totalPayouts: 0,
+            transactions: [],
           };
         }
 
-        const deductionAmount = vendorOrder.netAmount || (vendorOrder.subtotal - vendorOrder.commission);
+        const deductionAmount =
+          vendorOrder.netAmount ||
+          vendorOrder.subtotal - vendorOrder.commission;
 
-        if (vendorOrder.payoutStatus === 'completed') {
+        if (vendorOrder.payoutStatus === "completed") {
           // Allow negative balance
-          vendor.wallet.balance = (vendor.wallet.balance || 0) - deductionAmount;
-          vendor.wallet.totalEarnings = Math.max(0, (vendor.wallet.totalEarnings || 0) - deductionAmount);
-          vendor.wallet.totalCommissionPaid = Math.max(0, (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission);
+          vendor.wallet.balance =
+            (vendor.wallet.balance || 0) - deductionAmount;
+          vendor.wallet.totalEarnings = Math.max(
+            0,
+            (vendor.wallet.totalEarnings || 0) - deductionAmount,
+          );
+          vendor.wallet.totalCommissionPaid = Math.max(
+            0,
+            (vendor.wallet.totalCommissionPaid || 0) - vendorOrder.commission,
+          );
 
           vendor.wallet.transactions.push({
-            type: 'refund_debit',
+            type: "refund_debit",
             amount: -deductionAmount,
             description: `Refund Deduction for Order #${vendorOrder._id.toString().slice(-8)} (Vendor Status Update)`,
             orderId: vendorOrder._id,
-            status: 'completed',
-            balanceAfter: vendor.wallet.balance
+            status: "completed",
+            balanceAfter: vendor.wallet.balance,
           });
         } else {
-          vendor.wallet.pendingBalance = Math.max(0, (vendor.wallet.pendingBalance || 0) - deductionAmount);
+          vendor.wallet.pendingBalance = Math.max(
+            0,
+            (vendor.wallet.pendingBalance || 0) - deductionAmount,
+          );
 
           vendor.wallet.transactions.push({
-            type: 'pending_cancelled',
+            type: "pending_cancelled",
             amount: -deductionAmount,
             description: `Pending Order #${vendorOrder._id.toString().slice(-8)} refunded (Vendor Status Update)`,
             orderId: vendorOrder._id,
-            status: 'completed',
-            balanceAfter: vendor.wallet.balance
+            status: "completed",
+            balanceAfter: vendor.wallet.balance,
           });
         }
 
         // Update metrics
         vendor.metrics = vendor.metrics || {};
-        vendor.metrics.refundedOrders = (vendor.metrics.refundedOrders || 0) + 1;
+        vendor.metrics.refundedOrders =
+          (vendor.metrics.refundedOrders || 0) + 1;
         // Deduct revenue and commission from metrics
-        vendor.metrics.totalRevenue = Math.max(0, (vendor.metrics.totalRevenue || 0) - vendorOrder.subtotal);
-        vendor.metrics.totalCommission = Math.max(0, (vendor.metrics.totalCommission || 0) - vendorOrder.commission);
+        vendor.metrics.totalRevenue = Math.max(
+          0,
+          (vendor.metrics.totalRevenue || 0) - vendorOrder.subtotal,
+        );
+        vendor.metrics.totalCommission = Math.max(
+          0,
+          (vendor.metrics.totalCommission || 0) - vendorOrder.commission,
+        );
 
         await vendor.save();
       }
-      vendorOrder.payoutStatus = 'refunded';
+      vendorOrder.payoutStatus = "refunded";
       // --- FINANCIAL REFUND LOGIC END ---
 
-      vendorOrder.status = 'returned';
-    } else if (normalizedStatus === 'Approved') {
-      vendorOrder.status = 'returned';
+      vendorOrder.status = "returned";
+    } else if (normalizedStatus === "Approved") {
+      vendorOrder.status = "returned";
     }
 
     vendorOrder.returnStatus = normalizedStatus;
@@ -1325,8 +1433,8 @@ router.put("/returns/:id", protectVendor, approvedVendor, async (req, res) => {
     const mainOrder = await Order.findById(vendorOrder.order);
     if (mainOrder) {
       mainOrder.returnStatus = normalizedStatus;
-      if (normalizedStatus === 'Completed') {
-        mainOrder.status = 'Returned';
+      if (normalizedStatus === "Completed") {
+        mainOrder.status = "Returned";
         mainOrder.isRefunded = true;
       }
       await mainOrder.save();
@@ -1334,7 +1442,7 @@ router.put("/returns/:id", protectVendor, approvedVendor, async (req, res) => {
 
     res.json({
       message: "Return status updated successfully",
-      returnStatus: vendorOrder.returnStatus
+      returnStatus: vendorOrder.returnStatus,
     });
   } catch (error) {
     console.error("Error updating return status:", error);
@@ -1357,8 +1465,8 @@ router.get("/dashboard", protectVendor, approvedVendor, async (req, res) => {
       {
         $match: {
           vendor: vendorId,
-          status: { $nin: ['cancelled', 'returned'] } // Exclude cancelled/returned from stats
-        }
+          status: { $nin: ["cancelled", "returned"] }, // Exclude cancelled/returned from stats
+        },
       },
       {
         $group: {
@@ -1387,8 +1495,8 @@ router.get("/dashboard", protectVendor, approvedVendor, async (req, res) => {
     const vendor = await Vendor.findById(vendorId);
     const lowStockItems = vendor.inventory
       ? vendor.inventory.filter(
-        (item) => item.stockQuantity <= item.reorderLevel && item.isActive
-      )
+          (item) => item.stockQuantity <= item.reorderLevel && item.isActive,
+        )
       : [];
 
     // Get monthly revenue (last 6 months)
@@ -1424,7 +1532,7 @@ router.get("/dashboard", protectVendor, approvedVendor, async (req, res) => {
       },
       ordersByStatus: ordersByStatus.reduce(
         (acc, item) => ({ ...acc, [item._id]: item.count }),
-        {}
+        {},
       ),
       recentOrders,
       lowStockItems,
@@ -1453,7 +1561,7 @@ router.get("/payouts", protectVendor, approvedVendor, async (req, res) => {
       vendor: vendorId,
       payoutStatus: { $in: ["processing", "completed"] },
     }).select(
-      "subtotal commission netAmount payoutStatus payoutDate payoutReference createdAt"
+      "subtotal commission netAmount payoutStatus payoutDate payoutReference createdAt",
     );
 
     const summary = await VendorOrder.aggregate([
@@ -1480,7 +1588,7 @@ router.get("/payouts", protectVendor, approvedVendor, async (req, res) => {
 router.get("/wallet", protectVendor, async (req, res) => {
   try {
     const vendor = await Vendor.findById(req.vendor._id).select(
-      "wallet subscription commissionRate"
+      "wallet subscription commissionRate",
     );
 
     if (!vendor) {
@@ -1495,7 +1603,7 @@ router.get("/wallet", protectVendor, async (req, res) => {
         totalEarnings: 0,
         totalCommissionPaid: 0,
         totalPayouts: 0,
-        transactions: []
+        transactions: [],
       };
       await vendor.save();
     }
@@ -1504,13 +1612,18 @@ router.get("/wallet", protectVendor, async (req, res) => {
     // This ensures accuracy regardless of any legacy data issues
     const pendingOrders = await VendorOrder.find({
       vendor: req.vendor._id,
-      status: { $nin: ['delivered', 'cancelled', 'returned'] }
+      status: { $nin: ["delivered", "cancelled", "returned"] },
     });
-    const actualPendingBalance = pendingOrders.reduce((sum, order) => sum + (order.netAmount || 0), 0);
+    const actualPendingBalance = pendingOrders.reduce(
+      (sum, order) => sum + (order.netAmount || 0),
+      0,
+    );
 
     // If there's a mismatch, auto-fix the wallet
     if (vendor.wallet.pendingBalance !== actualPendingBalance) {
-      console.log(`Auto-fixing pendingBalance for vendor ${req.vendor._id}: ${vendor.wallet.pendingBalance} -> ${actualPendingBalance}`);
+      console.log(
+        `Auto-fixing pendingBalance for vendor ${req.vendor._id}: ${vendor.wallet.pendingBalance} -> ${actualPendingBalance}`,
+      );
       vendor.wallet.pendingBalance = actualPendingBalance;
       await vendor.save();
     }
@@ -1519,7 +1632,9 @@ router.get("/wallet", protectVendor, async (req, res) => {
     const transactions =
       vendor.wallet?.transactions?.slice(-50).reverse() || [];
 
-    console.log(`Wallet request for vendor ${vendor._id}: ${transactions.length} transactions, pendingBalance: ${actualPendingBalance}`);
+    console.log(
+      `Wallet request for vendor ${vendor._id}: ${transactions.length} transactions, pendingBalance: ${actualPendingBalance}`,
+    );
 
     res.json({
       balance: vendor.wallet?.balance || 0,
@@ -1580,7 +1695,7 @@ router.post(
         type: "payout",
         amount: -amount,
         description: `Payout requested to bank account ending ${vendor.bankDetails.accountNumber.slice(
-          -4
+          -4,
         )}`,
         status: "pending",
         balanceAfter: vendor.wallet.balance,
@@ -1595,7 +1710,7 @@ router.post(
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
-  }
+  },
 );
 
 // @desc    Get wallet transactions
@@ -1605,7 +1720,7 @@ router.get("/wallet/transactions", protectVendor, async (req, res) => {
   try {
     const { page = 1, limit = 20, type } = req.query;
     const vendor = await Vendor.findById(req.vendor._id).select(
-      "wallet.transactions"
+      "wallet.transactions",
     );
 
     let transactions = vendor.wallet?.transactions || [];
@@ -1638,7 +1753,7 @@ router.get("/wallet/transactions", protectVendor, async (req, res) => {
 router.get("/shop", protectVendor, async (req, res) => {
   try {
     const vendor = await Vendor.findById(req.vendor._id).select(
-      "shopSettings businessName logo"
+      "shopSettings businessName logo",
     );
     res.json({
       ...vendor.shopSettings?.toObject(),
@@ -1745,7 +1860,7 @@ router.get("/plans", async (req, res) => {
 router.get("/subscription", protectVendor, async (req, res) => {
   try {
     const vendor = await Vendor.findById(req.vendor._id).select(
-      "subscription commissionRate"
+      "subscription commissionRate",
     );
     const { vendorPlans } = require("../config/vendorPlans");
 
@@ -1781,11 +1896,15 @@ router.post("/subscription", protectVendor, async (req, res) => {
     const planDetails = vendorPlans[plan];
 
     const planLevels = { starter: 0, professional: 1, enterprise: 2 };
-    const currentLevel = planLevels[vendor.subscription?.plan || 'starter'];
+    const currentLevel = planLevels[vendor.subscription?.plan || "starter"];
     const newLevel = planLevels[plan];
 
     // Downgrade Logic
-    if (newLevel < currentLevel && vendor.subscription?.isActive && vendor.subscription?.endDate > new Date()) {
+    if (
+      newLevel < currentLevel &&
+      vendor.subscription?.isActive &&
+      vendor.subscription?.endDate > new Date()
+    ) {
       vendor.subscription.upcomingPlan = plan;
       vendor.subscription.upcomingPlanDate = vendor.subscription.endDate;
       vendor.subscription.autoRenew = false;
@@ -1795,21 +1914,24 @@ router.post("/subscription", protectVendor, async (req, res) => {
       // Notify
       await Notification.create({
         recipient: vendor._id,
-        recipientModel: 'Vendor',
-        type: 'info',
-        title: 'Plan Downgrade Scheduled',
-        message: `Your plan will be downgraded to ${planDetails.name} on ${new Date(vendor.subscription.endDate).toLocaleDateString()}.`
+        recipientModel: "Vendor",
+        type: "info",
+        title: "Plan Downgrade Scheduled",
+        message: `Your plan will be downgraded to ${planDetails.name} on ${new Date(vendor.subscription.endDate).toLocaleDateString()}.`,
       });
 
       return res.json({
         message: `Plan change to ${planDetails.name} scheduled for ${new Date(vendor.subscription.endDate).toLocaleDateString()}`,
         subscription: vendor.subscription,
-        commissionRate: vendor.commissionRate
+        commissionRate: vendor.commissionRate,
       });
     }
 
     // Upgrade
-    const price = billingCycle === "yearly" ? planDetails.priceYearly : planDetails.priceMonthly;
+    const price =
+      billingCycle === "yearly"
+        ? planDetails.priceYearly
+        : planDetails.priceMonthly;
 
     if (plan === "starter") {
       vendor.subscription = {
@@ -1819,27 +1941,29 @@ router.post("/subscription", protectVendor, async (req, res) => {
         isActive: true,
         autoRenew: false,
         upcomingPlan: undefined,
-        upcomingPlanDate: undefined
+        upcomingPlanDate: undefined,
       };
       vendor.commissionRate = getCommissionRate("starter");
       await vendor.save();
 
       await Notification.create({
         recipient: vendor._id,
-        recipientModel: 'Vendor',
-        type: 'success',
-        title: 'Starter Plan Activated',
-        message: `You have successfully switched to the Starter plan.`
+        recipientModel: "Vendor",
+        type: "success",
+        title: "Starter Plan Activated",
+        message: `You have successfully switched to the Starter plan.`,
       });
 
       return res.json({
         message: "Starter plan activated",
         subscription: vendor.subscription,
-        commissionRate: vendor.commissionRate
+        commissionRate: vendor.commissionRate,
       });
     }
 
-    const endDate = new Date(Date.now() + (billingCycle === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000);
+    const endDate = new Date(
+      Date.now() + (billingCycle === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000,
+    );
 
     vendor.subscription = {
       plan,
@@ -1866,10 +1990,10 @@ router.post("/subscription", protectVendor, async (req, res) => {
 
     await Notification.create({
       recipient: vendor._id,
-      recipientModel: 'Vendor',
-      type: 'success',
-      title: 'Plan Upgraded!',
-      message: `Welcome to the ${planDetails.name} plan. You have been charged ₹${price}.`
+      recipientModel: "Vendor",
+      type: "success",
+      title: "Plan Upgraded!",
+      message: `Welcome to the ${planDetails.name} plan. You have been charged ₹${price}.`,
     });
 
     res.json({
@@ -1887,103 +2011,113 @@ router.post("/subscription", protectVendor, async (req, res) => {
 // @desc    Get public vendor shop
 // @route   GET /api/vendors/shop/:slugOrId
 // @access  Public
-router.get("/shop/:slugOrId", async (req, res) => {
-  try {
-    const { slugOrId } = req.params;
-    let vendor;
+router.get(
+  "/shop/:slugOrId",
+  cacheByIdMiddleware(vendorCache, "vendor:shop"),
+  async (req, res) => {
+    try {
+      const { slugOrId } = req.params;
+      let vendor;
 
-    // Check if it's a MongoDB ObjectId (24 hex characters)
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(slugOrId);
+      // Check if it's a MongoDB ObjectId (24 hex characters)
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(slugOrId);
 
-    if (isObjectId) {
-      // Search by vendor ID - allow any approved vendor even if shop not published
-      try {
-        vendor = await Vendor.findById(slugOrId).select(
-          "businessName shopSettings logo metrics status"
-        );
-      } catch (err) {
-        // Invalid ObjectId format
-        console.error("Invalid ObjectId:", slugOrId);
-      }
+      if (isObjectId) {
+        // Search by vendor ID - allow any approved vendor even if shop not published
+        try {
+          vendor = await Vendor.findById(slugOrId)
+            .select("businessName shopSettings logo metrics status")
+            .lean();
+        } catch (err) {
+          // Invalid ObjectId format
+          console.error("Invalid ObjectId:", slugOrId);
+        }
 
-      // If vendor exists but not approved, return specific error
-      if (vendor && vendor.status !== "approved") {
-        return res.status(403).json({
-          message: "This vendor is pending approval",
-          status: vendor.status,
-        });
-      }
-    } else {
-      // Search by shop slug - require published
-      vendor = await Vendor.findOne({
-        "shopSettings.shopSlug": slugOrId,
-        status: "approved",
-        "shopSettings.isPublished": true,
-      }).select("businessName shopSettings logo metrics status");
-    }
-
-    if (!vendor) {
-      // Try one more search - maybe the slug exists but shop isn't published
-      if (!isObjectId) {
-        const unpublishedVendor = await Vendor.findOne({
-          "shopSettings.shopSlug": slugOrId,
-          status: "approved",
-        }).select("businessName shopSettings");
-
-        if (unpublishedVendor) {
+        // If vendor exists but not approved, return specific error
+        if (vendor && vendor.status !== "approved") {
           return res.status(403).json({
-            message: "This shop is not published yet",
-            shopName: unpublishedVendor.businessName,
+            message: "This vendor is pending approval",
+            status: vendor.status,
           });
         }
+      } else {
+        // Search by shop slug - require published
+        vendor = await Vendor.findOne({
+          "shopSettings.shopSlug": slugOrId,
+          status: "approved",
+          "shopSettings.isPublished": true,
+        })
+          .select("businessName shopSettings logo metrics status")
+          .lean();
       }
 
-      return res.status(404).json({ message: "Shop not found" });
+      if (!vendor) {
+        // Try one more search - maybe the slug exists but shop isn't published
+        if (!isObjectId) {
+          const unpublishedVendor = await Vendor.findOne({
+            "shopSettings.shopSlug": slugOrId,
+            status: "approved",
+          })
+            .select("businessName shopSettings")
+            .lean();
+
+          if (unpublishedVendor) {
+            return res.status(403).json({
+              message: "This shop is not published yet",
+              shopName: unpublishedVendor.businessName,
+            });
+          }
+        }
+
+        return res.status(404).json({ message: "Shop not found" });
+      }
+
+      // Get vendor products - include products pending approval if searching by ID
+      const productQuery = {
+        vendor: vendor._id,
+        isVendorProduct: true,
+      };
+
+      // If searching by slug (public shop), only show approved products
+      // If searching by ID, show all active products (vendor may not have published shop yet)
+      if (!isObjectId) {
+        productQuery.vendorStatus = "approved";
+        productQuery.isActive = true;
+      } else {
+        // For ID-based lookup, show all products that are active
+        productQuery.isActive = { $ne: false };
+      }
+
+      const products = await Product.find(productQuery)
+        .select(
+          "name slug description price images category rating numReviews vendorStatus",
+        )
+        .lean();
+
+      res.json({
+        shop: {
+          id: vendor._id,
+          name: vendor.shopSettings?.shopName || vendor.businessName,
+          slug: vendor.shopSettings?.shopSlug || vendor._id.toString(),
+          tagline: vendor.shopSettings?.tagline,
+          description: vendor.shopSettings?.shopDescription,
+          banner: vendor.shopSettings?.shopBanner,
+          logo: vendor.shopSettings?.shopLogo || vendor.logo,
+          returnPolicy: vendor.shopSettings?.returnPolicy,
+          shippingPolicy: vendor.shopSettings?.shippingPolicy,
+          processingTime: vendor.shopSettings?.processingTime,
+          socialLinks: vendor.shopSettings?.socialLinks,
+          rating: vendor.metrics?.averageRating || 0,
+          totalReviews: vendor.metrics?.totalReviews || 0,
+          totalOrders: vendor.metrics?.completedOrders || 0,
+          isPublished: vendor.shopSettings?.isPublished || false,
+        },
+        products,
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
     }
-
-    // Get vendor products - include products pending approval if searching by ID
-    const productQuery = {
-      vendor: vendor._id,
-      isVendorProduct: true,
-    };
-
-    // If searching by slug (public shop), only show approved products
-    // If searching by ID, show all active products (vendor may not have published shop yet)
-    if (!isObjectId) {
-      productQuery.vendorStatus = "approved";
-      productQuery.isActive = true;
-    } else {
-      // For ID-based lookup, show all products that are active
-      productQuery.isActive = { $ne: false };
-    }
-
-    const products = await Product.find(productQuery).select(
-      "name slug description price images category rating numReviews vendorStatus"
-    );
-
-    res.json({
-      shop: {
-        id: vendor._id,
-        name: vendor.shopSettings?.shopName || vendor.businessName,
-        slug: vendor.shopSettings?.shopSlug || vendor._id.toString(),
-        tagline: vendor.shopSettings?.tagline,
-        description: vendor.shopSettings?.shopDescription,
-        banner: vendor.shopSettings?.shopBanner,
-        logo: vendor.shopSettings?.shopLogo || vendor.logo,
-        returnPolicy: vendor.shopSettings?.returnPolicy,
-        shippingPolicy: vendor.shopSettings?.shippingPolicy,
-        processingTime: vendor.shopSettings?.processingTime,
-        socialLinks: vendor.shopSettings?.socialLinks,
-        rating: vendor.metrics?.averageRating || 0,
-        totalReviews: vendor.metrics?.totalReviews || 0,
-        totalOrders: vendor.metrics?.completedOrders || 0,
-        isPublished: vendor.shopSettings?.isPublished || false,
-      },
-      products,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+  },
+);
 
 module.exports = router;
