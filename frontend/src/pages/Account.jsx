@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     Lock, Mail, Truck, PackageCheck, Phone, Star, X, CreditCard, ChevronDown, Filter, Search, Eye, EyeOff, Wallet, LayoutDashboard,
-    User, Heart, Package, MapPin, Settings, HelpCircle, LogOut, CheckCircle, Clock, History, Ban
+    User, Heart, Package, MapPin, Settings, HelpCircle, LogOut, CheckCircle, Clock, History, Ban, Download, FileText
 } from 'lucide-react';
 import client from '../api/client';
 import { Link, useNavigate } from 'react-router-dom';
@@ -217,6 +217,24 @@ const Account = () => {
         } catch (error) {
             console.error("Cancellation Failed", error);
             alert(error.response?.data?.message || "Failed to cancel order");
+        }
+    };
+
+    const handleDownloadInvoice = async (orderId) => {
+        try {
+            const response = await client.get(`/invoices/${orderId}/download`, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Invoice-${orderId.slice(-8)}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (error) {
+            console.error("Failed to download invoice", error);
+            alert("Failed to download invoice. Please try again later.");
         }
     };
 
@@ -819,7 +837,7 @@ const Account = () => {
                                                         {/* Card Body */}
                                                         <div className="p-4 md:p-6">
                                                             {/* Items */}
-                                                            <div className="space-y-4 mb-8">
+                                                            <div className="space-y-4 mb-6">
                                                                 {order.orderItems?.map((item, idx) => (
                                                                     <div key={idx} className="flex gap-4 items-center">
                                                                         <div className="w-14 h-14 bg-surface rounded-sm flex-shrink-0 border border-secondary/10 p-1">
@@ -834,6 +852,42 @@ const Account = () => {
                                                                         </div>
                                                                     </div>
                                                                 ))}
+                                                            </div>
+
+                                                            {/* Price Breakdown */}
+                                                            <div className="mb-6 pt-4 border-t border-secondary/10 space-y-2 bg-secondary/5 p-4 rounded-sm">
+                                                                <div className="flex justify-between text-xs text-text-secondary">
+                                                                    <span>Subtotal</span>
+                                                                    <span>{formatPrice(order.itemsPrice || 0)}</span>
+                                                                </div>
+                                                                <div className="flex justify-between text-xs text-text-secondary">
+                                                                    <span>Tax</span>
+                                                                    <span>{formatPrice(order.taxPrice || 0)}</span>
+                                                                </div>
+                                                                <div className="flex justify-between text-xs text-text-secondary">
+                                                                    <span>Delivery Charge</span>
+                                                                    <span>{order.shippingPrice > 0 ? formatPrice(order.shippingPrice) : 'Free'}</span>
+                                                                </div>
+                                                                {order.discountAmount > 0 && (
+                                                                    <div className="flex justify-between text-xs text-green-600 font-medium">
+                                                                        <span>Discount</span>
+                                                                        <span>-{formatPrice(order.discountAmount)}</span>
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex justify-between text-sm font-bold text-primary pt-2 border-t border-secondary/10 mt-2">
+                                                                    <span>Total</span>
+                                                                    <span>{formatPrice(order.totalPrice)}</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Actions Row */}
+                                                            <div className="flex justify-between items-center mb-6">
+                                                                <button
+                                                                    onClick={() => handleDownloadInvoice(order._id)}
+                                                                    className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-wider hover:text-accent transition-colors"
+                                                                >
+                                                                    <FileText size={16} /> Download Invoice
+                                                                </button>
                                                             </div>
 
                                                             {/* Progress Bar - Simplified for Card */}
@@ -1357,51 +1411,53 @@ const Account = () => {
                 )
             }
             {/* Return Request Modal */}
-            {returnModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-                    <div className="bg-white rounded-sm shadow-xl w-full max-w-md overflow-hidden relative">
-                        <button
-                            onClick={() => setReturnModalOpen(false)}
-                            className="absolute top-4 right-4 text-text-secondary hover:text-primary transition-colors"
-                        >
-                            <X size={24} />
-                        </button>
-                        <div className="p-6">
-                            <h3 className="text-xl font-heading font-bold text-primary mb-2">Request Return</h3>
-                            <p className="text-text-secondary text-sm mb-6">Please tell us why you want to return this order. Note: Delivery charges are non-refundable.</p>
-                            <form onSubmit={handleReturnSubmit} className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-text-secondary mb-2">Reason</label>
-                                    <textarea
-                                        required
-                                        rows="4"
-                                        value={returnReason}
-                                        onChange={(e) => setReturnReason(e.target.value)}
-                                        placeholder="Reason for return..."
-                                        className="w-full bg-surface border border-secondary/20 rounded-sm p-3 focus:border-accent outline-none"
-                                    ></textarea>
-                                </div>
-                                <div className="flex justify-end gap-3 pt-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setReturnModalOpen(false)}
-                                        className="px-4 py-2 text-sm font-bold text-text-secondary hover:text-primary transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={isSubmittingReturn}
-                                        className="bg-primary text-white px-6 py-2 rounded-sm text-sm font-bold hover:bg-accent transition-colors disabled:opacity-50"
-                                    >
-                                        {isSubmittingReturn ? 'Submitting...' : 'Confirm Return'}
-                                    </button>
-                                </div>
-                            </form>
+            {
+                returnModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                        <div className="bg-white rounded-sm shadow-xl w-full max-w-md overflow-hidden relative">
+                            <button
+                                onClick={() => setReturnModalOpen(false)}
+                                className="absolute top-4 right-4 text-text-secondary hover:text-primary transition-colors"
+                            >
+                                <X size={24} />
+                            </button>
+                            <div className="p-6">
+                                <h3 className="text-xl font-heading font-bold text-primary mb-2">Request Return</h3>
+                                <p className="text-text-secondary text-sm mb-6">Please tell us why you want to return this order. Note: Delivery charges are non-refundable.</p>
+                                <form onSubmit={handleReturnSubmit} className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-text-secondary mb-2">Reason</label>
+                                        <textarea
+                                            required
+                                            rows="4"
+                                            value={returnReason}
+                                            onChange={(e) => setReturnReason(e.target.value)}
+                                            placeholder="Reason for return..."
+                                            className="w-full bg-surface border border-secondary/20 rounded-sm p-3 focus:border-accent outline-none"
+                                        ></textarea>
+                                    </div>
+                                    <div className="flex justify-end gap-3 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setReturnModalOpen(false)}
+                                            className="px-4 py-2 text-sm font-bold text-text-secondary hover:text-primary transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmittingReturn}
+                                            className="bg-primary text-white px-6 py-2 rounded-sm text-sm font-bold hover:bg-accent transition-colors disabled:opacity-50"
+                                        >
+                                            {isSubmittingReturn ? 'Submitting...' : 'Confirm Return'}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
         </div >
     );
 };

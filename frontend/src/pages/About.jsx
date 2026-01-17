@@ -80,6 +80,7 @@ const About = () => {
                             <div className="absolute -bottom-8 -left-8 bg-surface p-8 shadow-xl max-w-xs z-20 hidden lg:block">
                                 <p className="font-heading text-xl font-bold text-primary">Rajesh Thakur</p>
                                 <p className="text-sm text-accent uppercase tracking-wider mt-1">Founder & CEO</p>
+                                <p className="text-4xl text-blue-700 mt-4 transform -rotate-6 opacity-90" style={{ fontFamily: '"Great Vibes", cursive' }}>Rajesh Thakur</p>
                             </div>
                         </div>
                     </div>

@@ -1,34 +1,49 @@
-# Project Status Report
+# Siraba Organic E-Commerce - Client Access Guide
 
-## Completed Tasks
+This document contains the access details and links for the various portals of the application.
 
-### 1. Fixed Image Import Errors
-Resolved case-sensitivity issues in image imports that were causing build failures. Windows is case-insensitive, but the build environment (likely Linux-based on Vercel) is case-sensitive.
+## 🚀 Live Application Links
 
-- **File**: `frontend/src/pages/About.jsx`
-  - Changed `../assets/saffron.png` to `../assets/Saffron.png`
-  - Changed `../assets/hing.png` to `../assets/Hing.png`
+### 👑 Admin Portal
+Full administrative control over the platform, including users, vendors, products, and financial reporting.
 
-- **File**: `frontend/src/pages/Shop.jsx`
-  - Changed `../assets/saffron.png` to `../assets/Saffron.png`
-  - Changed `../assets/hing.png` to `../assets/Hing.png`
+- **URL:** [https://ecommerce-freelancing.vercel.app/admin](https://ecommerce-freelancing.vercel.app/admin)
+- **Login Credentials:**
+  - **Email:** `admin@prasadshaswat.com`
+  - **Password:** `admin123`
 
-## Pending Issues / Next Steps
+> **Note:** This account has super-admin privileges. Please change the password after the initial handover if required.
 
-### 1. `react-quill-new` Dependency Missing
-The file `frontend/src/pages/admin/AdminBlogEdit.jsx` imports `react-quill-new`, but this package is not listed in `frontend/package.json`.
+### 🏪 Vendor Portal
+The dedicated interface for vendors (sellers) to manage their shops, inventory, orders, and payouts.
 
-**Current Error:**
-```
-[vite]: Rollup failed to resolve import "react-quill-new" from .../AdminBlogEdit.jsx
-```
+- **URL:** [https://ecommerce-freelancing.vercel.app/vendor](https://ecommerce-freelancing.vercel.app/vendor)
+- **Access:**
+  - New vendors can **Register** via the link above.
+  - Existing vendors can login with their registered email/password.
+  - *Admin approval may be required for new vendor accounts.*
 
-**Required Action:**
-Run the following command in the `frontend` directory to install the missing dependency:
-```bash
-npm install react-quill-new
-```
-(Or revert the import to `react-quill` if that was intended).
+### 🛍️ User Storefront (Customer)
+The main public-facing website where customers browse products, add to cart, and place orders.
 
-### 2. Verify Build
-After installing the dependency, run `npm run build` again to ensure all path resolution errors are cleared.
+- **URL:** [https://ecommerce-freelancing.vercel.app/](https://ecommerce-freelancing.vercel.app/)
+- **Access:**
+  - Publicly accessible.
+  - Users can Sign Up / Login to manage their profile, address, and orders.
+
+---
+
+## 🛠️ Key Features Overview
+
+- **Admin Dashboard:**
+  - Vendor Management (Approval/Rejection)
+  - Revenue & Commission Tracking
+  - Product Oversight
+- **Vendor Dashboard:**
+  - Product Listing & Inventory Management
+  - Order Processing
+  - Wallet & Payout Requests
+- **Customer Experience:**
+  - Seamless Shopping Cart & Checkout
+  - Order Tracking
+  - User Profile Management
