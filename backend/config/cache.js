@@ -46,6 +46,9 @@ const generateCacheKey = (prefix, params) => {
   if (typeof params === "string") {
     return `${prefix}:${params}`;
   }
+  if (!params || typeof params !== "object") {
+    return `${prefix}:all`;
+  }
   const paramString = Object.entries(params)
     .filter(([_, value]) => value !== undefined && value !== null)
     .sort(([a], [b]) => a.localeCompare(b))
