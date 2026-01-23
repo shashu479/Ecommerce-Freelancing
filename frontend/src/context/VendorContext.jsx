@@ -122,12 +122,14 @@ export const VendorProvider = ({ children }) => {
       });
       setVendor((prev) => ({
         ...prev,
+        ...stepData, // Merge the submitted data (e.g., businessDescription) into state immediately
         onboardingStep: data.onboardingStep,
         onboardingComplete: data.onboardingComplete,
         status: data.status,
       }));
       const updatedVendor = {
         ...vendor,
+        ...stepData, // Also merge here for localStorage
         onboardingStep: data.onboardingStep,
         onboardingComplete: data.onboardingComplete,
         status: data.status,

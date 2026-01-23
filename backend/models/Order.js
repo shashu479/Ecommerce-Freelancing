@@ -54,6 +54,9 @@ const orderSchema = mongoose.Schema(
     isRefunded: { type: Boolean, default: false },
     refundAmount: { type: Number, default: 0 },
     refundDate: { type: Date },
+    gstClaimed: { type: Boolean, default: false },
+    buyerGstNumber: { type: String },
+    sellerGstNumber: { type: String },
   },
   {
     timestamps: true,

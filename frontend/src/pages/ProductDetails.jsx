@@ -21,6 +21,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import client from "../api/client";
+import ProductReviews from "../components/ProductReviews";
 
 const ProductDetails = () => {
   const { slug } = useParams();
@@ -33,29 +34,12 @@ const ProductDetails = () => {
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState("description");
 
-  const [reviewRating, setReviewRating] = useState(5);
-  const [reviewComment, setReviewComment] = useState("");
-
-  const handleSubmitReview = async (e) => {
-    e.preventDefault();
-    if (!user) return alert("Please login to review");
-    try {
-      const { data } = await client.post(`/products/${product._id}/reviews`, {
-        rating: reviewRating,
-        comment: reviewComment,
-      });
-      alert("Review submitted successfully");
-      setReviewComment("");
-      setReviewRating(5);
-      // Update product with new review
-      setProduct(prev => ({
-        ...prev,
-        reviews: [...(prev.reviews || []), data.review],
-        numReviews: (prev.numReviews || 0) + 1,
-        rating: data.rating
-      }));
-    } catch (error) {
-      alert(error.response?.data?.message || "Failed to submit review");
+  // Callback for when reviews are updated
+  const handleReviewUpdate = (data) => {
+    // Refetch product to get updated reviews
+    const updated = products.find((p) => p.slug === slug);
+    if (updated) {
+      setProduct(updated);
     }
   };
 
@@ -364,111 +348,10 @@ const ProductDetails = () => {
                   </div>
                 )}
                 {activeTab === "reviews" && (
-                  <div className="space-y-6">
-                    {/* Reviews List */}
-                    <div>
-                      {product.reviews && product.reviews.length > 0 ? (
-                        product.reviews.map((review) => (
-                          <div
-                            key={review._id}
-                            className="border-b border-secondary/10 pb-4 mb-4 last:border-0"
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="flex text-accent">
-                                {[...Array(5)].map((_, i) => (
-                                  <Star
-                                    key={i}
-                                    size={14}
-                                    className={
-                                      i < review.rating
-                                        ? "fill-current"
-                                        : "text-gray-300"
-                                    }
-                                  />
-                                ))}
-                              </div>
-                              <span className="font-bold text-sm">
-                                {review.name}
-                              </span>
-                              <span className="text-xs text-secondary">
-                                {new Date(review.createdAt).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <p className="text-sm text-text-secondary">
-                              {review.comment}
-                            </p>
-                            {review.vendorReply && (
-                              <div className="mt-3 ml-4 p-3 bg-secondary/5 border-l-2 border-primary rounded-r-sm">
-                                <p className="text-xs font-bold text-primary mb-1 flex items-center gap-1">
-                                  <Store size={12} /> Seller Response –{" "}
-                                  {new Date(
-                                    review.vendorReplyDate
-                                  ).toLocaleDateString()}
-                                </p>
-                                <p className="text-xs text-text-secondary">
-                                  {review.vendorReply}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm italic">No reviews yet.</p>
-                      )}
-                    </div>
-
-                    {/* Review Form */}
-                    {user ? (
-                      <form
-                        onSubmit={handleSubmitReview}
-                        className="bg-secondary/5 p-4 rounded-sm"
-                      >
-                        <h4 className="font-bold text-primary mb-3 text-sm">
-                          Write a Review
-                        </h4>
-                        <div className="flex gap-2 mb-3">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <button
-                              type="button"
-                              key={star}
-                              onClick={() => setReviewRating(star)}
-                            >
-                              <Star
-                                size={20}
-                                className={
-                                  star <= reviewRating
-                                    ? "text-accent fill-current"
-                                    : "text-gray-300"
-                                }
-                              />
-                            </button>
-                          ))}
-                        </div>
-                        <textarea
-                          value={reviewComment}
-                          onChange={(e) => setReviewComment(e.target.value)}
-                          placeholder="Share your experience..."
-                          className="w-full p-2 text-sm border border-secondary/20 rounded-sm mb-3 focus:outline-none focus:border-primary"
-                          rows="3"
-                          required
-                        />
-                        <button
-                          type="submit"
-                          className="px-4 py-2 bg-primary text-white text-xs font-bold uppercase tracking-wider rounded-sm"
-                        >
-                          Submit Review
-                        </button>
-                      </form>
-                    ) : (
-                      <p className="text-sm text-secondary">
-                        Please{" "}
-                        <Link to="/login" className="text-primary underline">
-                          login
-                        </Link>{" "}
-                        to write a review.
-                      </p>
-                    )}
-                  </div>
+                  <ProductReviews
+                    product={product}
+                    onReviewUpdate={handleReviewUpdate}
+                  />
                 )}
               </div>
             </div>

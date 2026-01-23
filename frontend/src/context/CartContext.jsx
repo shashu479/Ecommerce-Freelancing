@@ -55,17 +55,52 @@ export const CartProvider = ({ children }) => {
 
     const addToCart = (product, quantity = 1) => {
         setCartItems((prevItems) => {
-            const existingItem = prevItems.find((item) => item._id === product._id || item.id === product.id); // Handle both DB _id and static id
+            // Get the unique identifier for the product
+            const getProductId = (item) => item._id || item.id;
+            const productId = getProductId(product);
+
+            // Debug logging
+            console.log('Adding to cart:', {
+                productName: product.name,
+                productId: productId,
+                quantity: quantity,
+                currentCart: prevItems.map(item => ({
+                    name: item.name,
+                    id: getProductId(item)
+                }))
+            });
+
+            // Check if this exact product already exists in cart
+            const existingItemIndex = prevItems.findIndex((item) => {
+                const itemId = getProductId(item);
+                return itemId === productId;
+            });
+
             let newItems;
-            if (existingItem) {
-                newItems = prevItems.map((item) =>
-                    (item._id === product._id || item.id === product.id)
+
+            if (existingItemIndex !== -1) {
+                // Product exists - update quantity
+                console.log('Product exists in cart, updating quantity');
+                newItems = prevItems.map((item, index) =>
+                    index === existingItemIndex
                         ? { ...item, quantity: item.quantity + quantity }
                         : item
                 );
             } else {
-                newItems = [...prevItems, { ...product, quantity }];
+                // New product - add to cart
+                console.log('New product, adding to cart');
+                newItems = [
+                    ...prevItems,
+                    {
+                        ...product,
+                        quantity,
+                        // Ensure we have a valid ID
+                        _id: product._id || product.id,
+                        id: product.id || product._id
+                    }
+                ];
             }
+
             syncCartToDB(newItems);
             return newItems;
         });

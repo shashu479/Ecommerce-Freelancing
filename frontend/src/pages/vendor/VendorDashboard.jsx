@@ -609,19 +609,51 @@ const OrdersContent = ({ orders, fetchOrders, updateOrderStatus }) => {
                     {new Date(order.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-5">
-                    <button
-                      onClick={() => {
-                        setSelectedOrder(order);
-                        setUpdateData({
-                          status: order.status,
-                          trackingNumber: order.trackingNumber || "",
-                          shippingCarrier: order.shippingCarrier || "",
-                        });
-                      }}
-                      className="text-accent text-xs font-bold uppercase tracking-wider hover:text-primary transition-colors hover:underline"
-                    >
-                      Update
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedOrder(order);
+                          setUpdateData({
+                            status: order.status,
+                            trackingNumber: order.trackingNumber || "",
+                            shippingCarrier: order.shippingCarrier || "",
+                          });
+                        }}
+                        className="text-accent text-xs font-bold uppercase tracking-wider hover:text-primary transition-colors hover:underline"
+                      >
+                        Update
+                      </button>
+                      <span className="text-secondary/20">|</span>
+                      <button
+                        onClick={async () => {
+                          try {
+                            // Use axios with auth token to download PDF
+                            const response = await client.get(`/vendors/invoices/${order._id}/download`, {
+                              responseType: 'blob'
+                            });
+
+                            // Create blob link to download
+                            const blob = new Blob([response.data], { type: 'application/pdf' });
+                            const url = window.URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = `Vendor-Invoice-${order._id.slice(-8).toUpperCase()}.pdf`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            window.URL.revokeObjectURL(url);
+                          } catch (error) {
+                            console.error('Failed to download invoice:', error);
+                            alert('Failed to download invoice. Please try again.');
+                          }
+                        }}
+                        className="text-primary text-xs font-bold uppercase tracking-wider hover:text-accent transition-colors hover:underline flex items-center gap-1"
+                        title="Download Invoice"
+                      >
+                        <FileText className="w-3 h-3" />
+                        Invoice
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

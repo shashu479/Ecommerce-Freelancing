@@ -363,10 +363,28 @@
                     <span>Subtotal</span>
                     <span>{{subtotal}}</span>
                 </div>
+                {{#if showGST}}
+                <div class="total-row">
+                    <span>GST ({{gstPercentage}}%)</span>
+                    <span>{{gstAmount}}</span>
+                </div>
+                <div class="total-row"
+                    style="font-size: 10px; color: #666; border-top: 1px solid #e5e5e5; padding-top: 8px;">
+                    <span>Vendor GST: {{sellerGST}}</span>
+                    <span></span>
+                </div>
+                {{#if buyerGST}}
+                <div class="total-row" style="font-size: 10px; color: #666;">
+                    <span>Buyer GST: {{buyerGST}}</span>
+                    <span></span>
+                </div>
+                {{/if}}
+                {{else}}
                 <div class="total-row">
                     <span>Tax (Included)</span>
                     <span>{{tax}}</span>
                 </div>
+                {{/if}}
                 <div class="total-row">
                     <span>Shipping</span>
                     <span>{{shipping}}</span>

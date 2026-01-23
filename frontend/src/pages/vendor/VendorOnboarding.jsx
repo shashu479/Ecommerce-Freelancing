@@ -59,8 +59,28 @@ const VendorOnboarding = () => {
 
   useEffect(() => {
     fetchPlans();
-    if (vendor?.onboardingStep) {
-      setCurrentStep(vendor.onboardingStep);
+    if (vendor) {
+      // Pre-fill business details if they exist
+      if (vendor.businessDescription || vendor.gstNumber || vendor.panNumber) {
+        setBusinessDetails(prev => ({
+          ...prev,
+          businessDescription: vendor.businessDescription || prev.businessDescription,
+          website: vendor.website || prev.website,
+          gstNumber: vendor.gstNumber || prev.gstNumber,
+          panNumber: vendor.panNumber || prev.panNumber,
+          fssaiNumber: vendor.fssaiNumber || prev.fssaiNumber,
+        }));
+      }
+
+      // Determine correct step
+      // Even if backend says step 2 (Address), if we lack basic business details, force Step 1
+      const hasBusinessDetails = vendor.businessDescription && vendor.businessDescription.length > 0;
+
+      if (vendor.onboardingStep && vendor.onboardingStep > 1 && !hasBusinessDetails) {
+        setCurrentStep(1);
+      } else if (vendor.onboardingStep) {
+        setCurrentStep(vendor.onboardingStep);
+      }
     }
   }, [vendor]);
 

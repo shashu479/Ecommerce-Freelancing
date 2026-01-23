@@ -49,11 +49,11 @@ router.get(
     try {
       const keyword = req.query.keyword
         ? {
-            name: {
-              $regex: req.query.keyword,
-              $options: "i",
-            },
-          }
+          name: {
+            $regex: req.query.keyword,
+            $options: "i",
+          },
+        }
         : {};
 
       const category = req.query.category
@@ -170,64 +170,253 @@ router.delete("/:id", protect, admin, async (req, res) => {
   }
 });
 
-// @desc    Create new review
+// @desc    Check if user can review product
+// @route   GET /api/products/:id/can-review
+// @access  Private
+router.get("/:id/can-review", protect, async (req, res) => {
+  try {
+    const { checkPurchaseStatus } = require("../middleware/reviewMiddleware");
+    const productId = req.params.id;
+    const userId = req.user._id;
+
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // Check if already reviewed
+    const alreadyReviewed = product.reviews.find(
+      (r) => r.user.toString() === userId.toString(),
+    );
+
+    // Check if purchased
+    const purchaseStatus = await checkPurchaseStatus(userId, productId);
+
+    res.json({
+      canReview: purchaseStatus.canReview && !alreadyReviewed,
+      isPurchased: purchaseStatus.isPurchased,
+      alreadyReviewed: !!alreadyReviewed,
+      purchaseStatus,
+      existingReview: alreadyReviewed || null,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Create new review (Verified Buyers Only)
 // @route   POST /api/products/:id/reviews
 // @access  Private
 router.post("/:id/reviews", protect, async (req, res) => {
   const { rating, comment } = req.body;
 
   try {
+    // Import middleware function
+    const { verifyPurchase, checkPurchaseStatus } = require("../middleware/reviewMiddleware");
+
     const product = await Product.findById(req.params.id);
 
-    if (product) {
-      const alreadyReviewed = product.reviews.find(
-        (r) => r.user.toString() === req.user._id.toString(),
-      );
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
 
-      if (alreadyReviewed) {
-        return res.status(400).json({ message: "Product already reviewed" });
-      }
+    // Check if already reviewed
+    const alreadyReviewed = product.reviews.find(
+      (r) => r.user.toString() === req.user._id.toString(),
+    );
 
-      const review = {
-        name: req.user.name,
-        rating: Number(rating),
-        comment,
-        user: req.user._id,
-      };
+    if (alreadyReviewed) {
+      return res.status(400).json({
+        message: "You have already reviewed this product. You can update your existing review.",
+        existingReview: alreadyReviewed
+      });
+    }
 
-      product.reviews.push(review);
+    // CRITICAL: Verify purchase
+    const purchaseStatus = await checkPurchaseStatus(req.user._id, req.params.id);
 
-      product.numReviews = product.reviews.length;
+    if (!purchaseStatus.canReview) {
+      return res.status(403).json({
+        message: "You can only review products you have purchased and received",
+        canReview: false,
+        reason: "NOT_PURCHASED",
+      });
+    }
 
-      product.rating =
-        product.reviews.reduce((acc, item) => item.rating + acc, 0) /
-        product.reviews.length;
+    // Validation
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    }
 
-      await product.save();
-      // Clear product cache when review is added
-      invalidateCache.products();
+    if (!comment || comment.trim().length < 10) {
+      return res.status(400).json({ message: "Review must be at least 10 characters long" });
+    }
 
-      // Get the newly added review with its _id
-      const newReview = product.reviews[product.reviews.length - 1];
+    const review = {
+      name: req.user.name,
+      rating: Number(rating),
+      comment: comment.trim(),
+      user: req.user._id,
+    };
 
-      // Emit real-time event
-      if (req.io) {
-        req.io.emit("new_review", {
-          productId: product._id,
-          review: newReview,
-          rating: product.rating,
-        });
-      }
+    product.reviews.push(review);
+    product.numReviews = product.reviews.length;
+    product.rating =
+      product.reviews.reduce((acc, item) => item.rating + acc, 0) /
+      product.reviews.length;
 
-      res.status(201).json({
-        message: "Review added",
+    await product.save();
+
+    // Clear product cache when review is added
+    invalidateCache.products();
+
+    // Get the newly added review with its _id
+    const newReview = product.reviews[product.reviews.length - 1];
+
+    // Emit real-time event
+    if (req.io) {
+      req.io.emit("new_review", {
+        productId: product._id,
         review: newReview,
         rating: product.rating,
       });
-    } else {
-      res.status(404).json({ message: "Product not found" });
     }
+
+    res.status(201).json({
+      message: "Review added successfully",
+      review: newReview,
+      rating: product.rating,
+      numReviews: product.numReviews,
+      verifiedPurchase: true,
+    });
   } catch (error) {
+    console.error("Review creation error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Update user's own review
+// @route   PUT /api/products/:id/reviews/:reviewId
+// @access  Private
+router.put("/:id/reviews/:reviewId", protect, async (req, res) => {
+  const { rating, comment } = req.body;
+
+  try {
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const review = product.reviews.id(req.params.reviewId);
+
+    if (!review) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    // Only review owner can update
+    if (review.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "You can only update your own reviews" });
+    }
+
+    // Validation
+    if (rating && (rating < 1 || rating > 5)) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    }
+
+    if (comment && comment.trim().length < 10) {
+      return res.status(400).json({ message: "Review must be at least 10 characters long" });
+    }
+
+    // Update review
+    if (rating) review.rating = Number(rating);
+    if (comment) review.comment = comment.trim();
+
+    // Recalculate product rating
+    product.rating =
+      product.reviews.reduce((acc, item) => item.rating + acc, 0) /
+      product.reviews.length;
+
+    await product.save();
+    invalidateCache.products();
+
+    // Emit real-time event
+    if (req.io) {
+      req.io.emit("review_updated", {
+        productId: product._id,
+        reviewId: review._id,
+        rating: product.rating,
+      });
+    }
+
+    res.json({
+      message: "Review updated successfully",
+      review,
+      rating: product.rating,
+    });
+  } catch (error) {
+    console.error("Review update error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Delete review
+// @route   DELETE /api/products/:id/reviews/:reviewId
+// @access  Private (User can delete own review, Admin can delete any)
+router.delete("/:id/reviews/:reviewId", protect, async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    const review = product.reviews.id(req.params.reviewId);
+
+    if (!review) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    // Only review owner or admin can delete
+    const isOwner = review.user.toString() === req.user._id.toString();
+    const isAdmin = req.user.isAdmin;
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        message: "You can only delete your own reviews"
+      });
+    }
+
+    // Remove review using pull
+    product.reviews.pull(req.params.reviewId);
+
+    // Recalculate ratings
+    product.numReviews = product.reviews.length;
+    product.rating =
+      product.reviews.length > 0
+        ? product.reviews.reduce((acc, item) => item.rating + acc, 0) /
+        product.reviews.length
+        : 0;
+
+    await product.save();
+    invalidateCache.products();
+
+    // Emit real-time event
+    if (req.io) {
+      req.io.emit("review_deleted", {
+        productId: product._id,
+        reviewId: req.params.reviewId,
+        rating: product.rating,
+      });
+    }
+
+    res.json({
+      message: "Review deleted successfully",
+      rating: product.rating,
+      numReviews: product.numReviews,
+    });
+  } catch (error) {
+    console.error("Review deletion error:", error);
     res.status(500).json({ message: error.message });
   }
 });

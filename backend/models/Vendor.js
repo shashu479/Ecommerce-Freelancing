@@ -178,6 +178,16 @@ const vendorSchema = mongoose.Schema(
     panNumber: { type: String },
     fssaiNumber: { type: String },
 
+    // GST Claim Feature
+    claim_gst: {
+      type: Boolean,
+      default: false,
+      required: true
+    },
+    gst_claimed_at: {
+      type: Date
+    },
+
     // Compliance Documents
     complianceDocuments: [complianceDocSchema],
 

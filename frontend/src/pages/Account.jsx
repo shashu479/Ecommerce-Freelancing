@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useOrders } from '../context/OrderContext';
 import { useCurrency } from '../context/CurrencyContext';
+import PhoneInput from '../components/PhoneInput';
 
 // Subcode for Wishlist Grid to handle fetching
 const WishlistGrid = () => {
@@ -91,17 +92,15 @@ const Account = () => {
     const [authError, setAuthError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Mock Data - B2C Customer (Fallback for missing backend fields)
+    // Use actual user data
     const userProfile = {
         name: user?.name || "Guest User",
         email: user?.email || "guest@example.com",
-        phone: "+91 98765 43210", // Placeholder
-        altPhone: "+91 98989 89898", // Placeholder
-        dob: "1995-08-15", // Placeholder
-        gender: "Male", // Placeholder
-        address: "B-45, Greater Kailash I, New Delhi", // Placeholder
-        country: "India", // Placeholder
-        loyaltyPoints: 120 // Placeholder
+        phone: user?.phone || "",
+        altPhone: user?.altPhone || "",
+        dob: user?.dob || "",
+        gender: user?.gender || "Male",
+        loyaltyPoints: 120 // Placeholder for future feature
     };
 
     // Helper function to get order status details
@@ -261,22 +260,72 @@ const Account = () => {
         }
     };
 
+    const [gstConfig, setGstConfig] = useState({
+        enabled: false,
+        claimed: false,
+        gstNumber: ''
+    });
+
     useEffect(() => {
         if (user) {
+            // Format date properly for date input (YYYY-MM-DD format)
+            const formattedDob = user.dob
+                ? new Date(user.dob).toISOString().split('T')[0]
+                : '';
+
             setProfileForm({
-                name: user?.name || '',
-                email: user?.email || '',
-                phone: userProfile?.phone || user?.phone || '',
-                altPhone: userProfile?.altPhone || '',
-                dob: userProfile?.dob || '',
-                gender: userProfile?.gender || 'Male'
+                name: user.name || '',
+                email: user.email || '',
+                phone: user.phone || '',
+                altPhone: user.altPhone || '',
+                dob: formattedDob,
+                gender: user.gender || 'Male'
             });
 
             if (user.notificationPreferences) {
                 setNotifications(user.notificationPreferences);
             }
+
+            // Fetch GST Settings & User Claim Status
+            const fetchGSTData = async () => {
+                try {
+                    const [settingsRes, userRes] = await Promise.all([
+                        client.get('/gst/settings'),
+                        client.get('/gst/claim/user')
+                    ]);
+
+                    setGstConfig({
+                        enabled: settingsRes.data.gst_enabled,
+                        claimed: userRes.data.claim_gst,
+                        gstNumber: userRes.data.user_gst_number || ''
+                    });
+                } catch (error) {
+                    console.error("Failed to fetch GST data", error);
+                }
+            };
+            fetchGSTData();
         }
     }, [user]);
+
+    const handleGSTUpdate = async (claimed, number) => {
+        try {
+            const res = await client.put('/gst/claim/user', {
+                claim_gst: claimed,
+                user_gst_number: number
+            });
+            if (res.data.success) {
+                setGstConfig(prev => ({
+                    ...prev,
+                    claimed: res.data.claim_gst,
+                    gstNumber: res.data.user_gst_number || ''
+                }));
+                // alert('GST settings updated successfully');
+            }
+        } catch (error) {
+            console.error("Failed to update GST settings", error);
+            alert("Failed to update GST settings");
+        }
+    };
 
     const handleNotificationToggle = async (key) => {
         const updatedNotifications = { ...notifications, [key]: !notifications[key] };
@@ -681,24 +730,20 @@ const Account = () => {
                                                 className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
                                             />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Phone Number</label>
-                                            <input
-                                                type="tel"
-                                                value={profileForm.phone}
-                                                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Alternate Phone</label>
-                                            <input
-                                                type="tel"
-                                                value={profileForm.altPhone}
-                                                onChange={(e) => setProfileForm({ ...profileForm, altPhone: e.target.value })}
-                                                className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary"
-                                            />
-                                        </div>
+                                        <PhoneInput
+                                            label="Phone Number"
+                                            value={profileForm.phone}
+                                            onChange={(value) => setProfileForm({ ...profileForm, phone: value })}
+                                            placeholder="Enter your mobile number"
+                                            required={true}
+                                        />
+                                        <PhoneInput
+                                            label="Alternate Phone"
+                                            value={profileForm.altPhone}
+                                            onChange={(value) => setProfileForm({ ...profileForm, altPhone: value })}
+                                            placeholder="Enter alternate number"
+                                            required={false}
+                                        />
                                         <div className="space-y-2">
                                             <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Date of Birth</label>
                                             <input
@@ -721,6 +766,52 @@ const Account = () => {
                                             </select>
                                         </div>
                                     </div>
+
+                                    {/* GST Section */}
+                                    {gstConfig.enabled && (
+                                        <div className="mt-8 pt-6 border-t border-secondary/10">
+                                            <h3 className="font-heading text-lg font-bold text-primary mb-4">Tax Information</h3>
+                                            <div className="bg-background p-4 rounded-sm border border-secondary/10">
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <div>
+                                                        <p className="font-bold text-sm text-primary">Claim GST Input Credit</p>
+                                                        <p className="text-xs text-text-secondary mt-1">Enable to get GST invoice with your GSTIN.</p>
+                                                    </div>
+                                                    <label className="relative inline-flex items-center cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="sr-only peer"
+                                                            checked={gstConfig.claimed}
+                                                            onChange={(e) => handleGSTUpdate(e.target.checked, gstConfig.gstNumber)}
+                                                        />
+                                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+                                                    </label>
+                                                </div>
+
+                                                {gstConfig.claimed && (
+                                                    <div className="space-y-2 animate-fade-in">
+                                                        <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">Your GST Number</label>
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                value={gstConfig.gstNumber}
+                                                                onChange={(e) => setGstConfig({ ...gstConfig, gstNumber: e.target.value.toUpperCase() })}
+                                                                placeholder="e.g. 29ABCDE1234F1Z5"
+                                                                className="flex-1 border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary uppercase font-mono"
+                                                            />
+                                                            <button
+                                                                onClick={() => handleGSTUpdate(true, gstConfig.gstNumber)}
+                                                                className="px-4 py-2 bg-secondary/10 text-primary text-xs font-bold uppercase tracking-wider rounded-sm hover:bg-secondary/20"
+                                                            >
+                                                                Save
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-[10px] text-text-secondary italic">Ensure your GSTIN is correct for valid input credit.</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="pt-4">
                                         <button
                                             onClick={handleProfileUpdate}

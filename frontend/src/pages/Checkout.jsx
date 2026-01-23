@@ -43,6 +43,17 @@ const Checkout = () => {
     phone: "",
   });
 
+  // GST State
+  const [gstClaimed, setGstClaimed] = useState(false);
+  const [buyerGstNumber, setBuyerGstNumber] = useState("");
+
+  useEffect(() => {
+    if (user) {
+      if (user.claim_gst) setGstClaimed(true);
+      if (user.user_gst_number) setBuyerGstNumber(user.user_gst_number);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) {
       navigate("/login?redirect=checkout");
@@ -153,6 +164,8 @@ const Checkout = () => {
       totalPrice,
       couponCode: discount.code,
       discountAmount: discount.amount,
+      gstClaimed,
+      buyerGstNumber,
     };
 
     try {
@@ -486,6 +499,55 @@ const Checkout = () => {
                   ? "Pay securely with cash or UPI upon delivery."
                   : "Secure payment gateway powered by Razorpay."}
               </p>
+            </div>
+
+            {/* Tax Information / GST Claim */}
+            <div className="bg-surface p-8 rounded-sm shadow-sm border border-secondary/10">
+              <h2 className="font-heading text-xl font-bold text-primary mb-6 flex items-center">
+                <div className="w-5 h-5 rounded-full border border-primary flex items-center justify-center mr-2 text-xs font-bold text-primary">
+                  %
+                </div>{" "}
+                Tax Information
+              </h2>
+
+              <div className="bg-background p-4 rounded-sm border border-secondary/10">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="font-bold text-sm text-primary">
+                      Claim GST Input Credit
+                    </p>
+                    <p className="text-xs text-text-secondary mt-1">
+                      Enable to get GST invoice with your GSTIN.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={gstClaimed}
+                      onChange={(e) => setGstClaimed(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+                  </label>
+                </div>
+
+                {gstClaimed && (
+                  <div className="space-y-2 animate-fade-in">
+                    <label className="text-xs uppercase text-text-secondary tracking-wider font-bold">
+                      Your GST Number
+                    </label>
+                    <input
+                      type="text"
+                      value={buyerGstNumber}
+                      onChange={(e) =>
+                        setBuyerGstNumber(e.target.value.toUpperCase())
+                      }
+                      placeholder="e.g. 29ABCDE1234F1Z5"
+                      className="w-full border-b border-secondary/20 bg-transparent py-2 focus:outline-none focus:border-accent text-primary uppercase font-mono"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

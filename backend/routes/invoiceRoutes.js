@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
+const GSTSettings = require('../models/GSTSettings');
 const { protect } = require('../middleware/authMiddleware');
 const fs = require('fs').promises;
 const path = require('path');
@@ -22,6 +23,17 @@ const generateInvoiceHTML = async (order) => {
     } catch (error) {
         console.warn('Logo not found, invoice will be generated without logo');
     }
+
+    // Get GST settings
+    const gstSettings = await GSTSettings.getInstance();
+
+    // Populate user if not already populated
+    if (!order.populated('user')) {
+        await order.populate('user');
+    }
+
+    // Check if GST should be shown
+    const showGST = gstSettings.gst_enabled && order.user?.claim_gst;
 
     // Prepare invoice data with proper fallbacks
     const shippingPrice = order.shippingPrice || 0;
@@ -54,7 +66,22 @@ const generateInvoiceHTML = async (order) => {
         subtotal: `₹${(order.itemsPrice || 0).toFixed(2)}`,
         tax: `₹${(order.taxPrice || 0).toFixed(2)}`,
         shipping: shippingPrice > 0 ? `₹${shippingPrice.toFixed(2)}` : 'Free',
-        grandTotal: `₹${(order.totalPrice || 0).toFixed(2)}`
+        grandTotal: `₹${(order.totalPrice || 0).toFixed(2)}`,
+
+        // GST Information
+        // Use Order snapshot if available, otherwise fallback to current settings
+        // If gst_enabled is false but we have a number, we should arguably still show it if it was captured on the order.
+        sellerGST: order.sellerGstNumber || gstSettings.admin_gst_number || null,
+        buyerGST: order.buyerGstNumber || ((order.user?.claim_gst) ? order.user?.user_gst_number : null),
+
+        // Show GST section if enabled globally OR if we have a Seller GST number to display
+        showGST: gstSettings.gst_enabled || !!(order.sellerGstNumber || gstSettings.admin_gst_number),
+
+        // For backward compatibility
+        gstNumber: order.sellerGstNumber || gstSettings.admin_gst_number || null,
+
+        gstPercentage: gstSettings.gst_enabled ? gstSettings.default_gst_percentage : null,
+        gstAmount: gstSettings.gst_enabled ? `₹${(order.taxPrice || 0).toFixed(2)}` : null
     };
 
     // Compile template with Handlebars

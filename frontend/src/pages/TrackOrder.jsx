@@ -156,10 +156,62 @@ const TrackOrder = () => {
                             </div>
                         </div>
 
+
+                        {/* Order Items */}
+                        <div className="mt-8 pt-8 border-t border-secondary/10">
+                            <h3 className="font-heading text-lg font-bold text-primary mb-6">Order Items</h3>
+                            <div className="space-y-4">
+                                {order.orderItems?.map((item, idx) => (
+                                    <div key={idx} className="flex gap-4 items-center border border-secondary/10 p-4 rounded-sm bg-background">
+                                        <div className="w-16 h-16 bg-surface rounded-sm flex-shrink-0 border border-secondary/10 p-1">
+                                            <img
+                                                src={item.image}
+                                                alt={item.name}
+                                                className="w-full h-full object-contain"
+                                                onError={(e) => { e.target.src = '/placeholder.png' }}
+                                            />
+                                        </div>
+                                        <div className="flex-grow min-w-0">
+                                            <p className="font-bold text-primary text-sm truncate">{item.name}</p>
+                                            <p className="text-xs text-text-secondary mt-1">
+                                                Qty: {item.quantity} × <span className="font-medium">₹{(item.price || 0).toFixed(2)}</span>
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-bold text-primary text-sm">₹{((item.price || 0) * (item.quantity || 1)).toFixed(2)}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Summary */}
+                            <div className="mt-6 flex justify-end">
+                                <div className="w-full md:w-1/2 lg:w-1/3 bg-secondary/5 p-4 rounded-sm space-y-2">
+                                    <div className="flex justify-between text-xs text-text-secondary">
+                                        <span>Subtotal</span>
+                                        <span>₹{(order.itemsPrice || 0).toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs text-text-secondary">
+                                        <span>Tax</span>
+                                        <span>₹{(order.taxPrice || 0).toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs text-text-secondary">
+                                        <span>Shipping</span>
+                                        <span>{order.shippingPrice > 0 ? `₹${order.shippingPrice.toFixed(2)}` : 'Free'}</span>
+                                    </div>
+                                    <div className="flex justify-between text-base font-bold text-primary pt-3 border-t border-secondary/10 mt-2">
+                                        <span>Total</span>
+                                        <span>₹{(order.totalPrice || 0).toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
-                )}
-            </div>
-        </div>
+                )
+                }
+            </div >
+        </div >
     );
 };
 

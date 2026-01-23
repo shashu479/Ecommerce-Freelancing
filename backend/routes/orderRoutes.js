@@ -73,6 +73,26 @@ router.post("/", protect, async (req, res) => {
       await coupon.save();
     }
 
+    // GST Logic
+    const GSTSettings = require("../models/GSTSettings");
+    const gstSettings = await GSTSettings.getInstance();
+
+    let gstClaimed = false;
+    let buyerGstNumber = null;
+    // Always capture seller GST if it exists in settings, regardless of enabled status
+    let sellerGstNumber = gstSettings.admin_gst_number || null;
+
+    // Check request body first (from Checkout), then fallback to User Profile
+    if (gstSettings.gst_enabled) {
+      if (req.body.gstClaimed) {
+        gstClaimed = true;
+        buyerGstNumber = req.body.buyerGstNumber || req.user.user_gst_number;
+      } else if (req.user.claim_gst) {
+        gstClaimed = true;
+        buyerGstNumber = req.user.user_gst_number;
+      }
+    }
+
     // Create the main order
     const order = new Order({
       user: req.user._id,
@@ -85,6 +105,9 @@ router.post("/", protect, async (req, res) => {
       totalPrice,
       couponCode,
       discountAmount,
+      gstClaimed,
+      buyerGstNumber,
+      sellerGstNumber,
     });
 
     const createdOrder = await order.save();

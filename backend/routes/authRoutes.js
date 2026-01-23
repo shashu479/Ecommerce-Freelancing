@@ -8,6 +8,23 @@ const { protect, admin } = require('../middleware/authMiddleware');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 
+// Security middleware
+const { loginLimiter, registerLimiter } = require('../middleware/securityMiddleware');
+const {
+    validateRegistration,
+    validateLogin,
+    validateEmail,
+    validatePasswordReset
+} = require('../middleware/validationMiddleware');
+const { securityLogger, authLogger } = require('../middleware/securityLogger');
+
+// Apply auth logger to all routes
+router.use(authLogger);
+
+// Account lockout settings
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCK_TIME = 15 * 60 * 1000; // 15 minutes
+
 // Generate JWT
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'secret123', { expiresIn: '30d' });
@@ -26,7 +43,9 @@ router.get('/users', protect, admin, async (req, res) => {
                 name: user.name,
                 email: user.email,
                 isAdmin: user.isAdmin,
+                isBlocked: user.isBlocked,
                 totalOrders: orderCount,
+                lastLogin: user.lastLogin,
                 createdAt: user.createdAt
             };
         }));
@@ -39,20 +58,35 @@ router.get('/users', protect, admin, async (req, res) => {
 // @desc    Register new user
 // @route   POST /api/auth/register
 // @access  Public
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, validateRegistration, async (req, res) => {
     const { name, email, password } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+
     try {
         const userExists = await User.findOne({ email: email.toLowerCase() });
-        if (userExists) return res.status(400).json({ message: 'User already exists' });
+        if (userExists) {
+            securityLogger.logSuspiciousActivity(
+                'DUPLICATE_REGISTRATION',
+                { email },
+                ip,
+                req.get('user-agent')
+            );
+            return res.status(400).json({ message: 'User already exists' });
+        }
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const user = await User.create({
-            name, email: email.toLowerCase(), password: hashedPassword
+            name,
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            lastPasswordChange: new Date()
         });
 
         if (user) {
+            securityLogger.logRegistration(user.email, ip, req.get('user-agent'));
+
             res.status(201).json({
                 _id: user._id,
                 name: user.name,
@@ -65,6 +99,7 @@ router.post('/register', async (req, res) => {
             res.status(400).json({ message: 'Invalid user data' });
         }
     } catch (error) {
+        securityLogger.logError(error, 'Registration', null, ip);
         res.status(500).json({ message: error.message });
     }
 });
@@ -72,26 +107,90 @@ router.post('/register', async (req, res) => {
 // @desc    Auth user & get token
 // @route   POST /api/auth/login
 // @access  Public
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, validateLogin, async (req, res) => {
     const { email, password } = req.body;
+    const ip = req.ip || req.connection.remoteAddress;
+
     try {
         const user = await User.findOne({ email: email.toLowerCase() });
 
-        if (user && (await bcrypt.compare(password, user.password))) {
-            res.json({
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                isAdmin: user.isAdmin,
-                cart: user.cart,
-                token: generateToken(user._id)
-            });
-        } else {
-            console.log(`Login failed for ${email}`);
-            res.status(401).json({ message: 'Invalid email or password' });
+        if (!user) {
+            securityLogger.logFailedAuth(email, ip, 'User not found');
+            return res.status(401).json({ message: 'Invalid email or password' });
         }
+
+        // Check if account is blocked
+        if (user.isBlocked) {
+            securityLogger.logFailedAuth(email, ip, 'Account blocked');
+            return res.status(403).json({
+                message: 'Account has been blocked. Please contact support.',
+                code: 'ACCOUNT_BLOCKED'
+            });
+        }
+
+        // Check if account is locked
+        if (user.accountLockUntil && user.accountLockUntil > Date.now()) {
+            const lockTimeRemaining = Math.ceil((user.accountLockUntil - Date.now()) / 60000);
+            securityLogger.logFailedAuth(email, ip, 'Account locked');
+            return res.status(423).json({
+                message: `Account is locked due to too many failed login attempts. Please try again in ${lockTimeRemaining} minutes.`,
+                code: 'ACCOUNT_LOCKED',
+                retryAfter: lockTimeRemaining
+            });
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+
+        if (!isPasswordValid) {
+            // Increment failed login attempts
+            user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+
+            // Lock account if max attempts exceeded
+            if (user.failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
+                user.accountLockUntil = Date.now() + LOCK_TIME;
+                await user.save();
+
+                securityLogger.logSuspiciousActivity(
+                    'ACCOUNT_LOCKED',
+                    { email, attempts: user.failedLoginAttempts },
+                    ip,
+                    req.get('user-agent')
+                );
+
+                return res.status(423).json({
+                    message: `Account locked due to ${MAX_LOGIN_ATTEMPTS} failed login attempts. Please try again in 15 minutes.`,
+                    code: 'ACCOUNT_LOCKED'
+                });
+            }
+
+            await user.save();
+            securityLogger.logFailedAuth(email, ip, `Invalid password (${user.failedLoginAttempts} attempts)`);
+
+            return res.status(401).json({
+                message: 'Invalid email or password',
+                attemptsRemaining: MAX_LOGIN_ATTEMPTS - user.failedLoginAttempts
+            });
+        }
+
+        // Successful login - reset failed attempts
+        user.failedLoginAttempts = 0;
+        user.accountLockUntil = undefined;
+        user.lastLogin = new Date();
+        await user.save();
+
+        securityLogger.logLogin(true, email, ip, req.get('user-agent'));
+
+        res.json({
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            isAdmin: user.isAdmin,
+            cart: user.cart,
+            token: generateToken(user._id)
+        });
     } catch (error) {
         console.error(error);
+        securityLogger.logError(error, 'Login', null, ip);
         res.status(500).json({ message: error.message });
     }
 });

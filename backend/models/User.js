@@ -7,6 +7,9 @@ const userSchema = mongoose.Schema(
     password: { type: String, required: true },
     isAdmin: { type: Boolean, required: true, default: false },
     phone: { type: String },
+    altPhone: { type: String }, // Alternate phone number
+    dob: { type: Date }, // Date of birth
+    gender: { type: String, enum: ['Male', 'Female', 'Other'], default: 'Male' }, // Gender
     addresses: [
       {
         address: String,
@@ -33,6 +36,13 @@ const userSchema = mongoose.Schema(
     ],
     resetPasswordToken: String,
     resetPasswordExpire: Date,
+    // Security fields for OWASP A07:2021 – Identification and Authentication Failures
+    failedLoginAttempts: { type: Number, default: 0 },
+    accountLockUntil: { type: Date },
+    isBlocked: { type: Boolean, default: false },
+    lastLogin: { type: Date },
+    lastPasswordChange: { type: Date },
+    // Wallet
     walletBalance: { type: Number, default: 0 },
     walletTransactions: [
       {
@@ -42,6 +52,28 @@ const userSchema = mongoose.Schema(
         date: { type: Date, default: Date.now },
       },
     ],
+    // GST Claim Feature
+    claim_gst: {
+      type: Boolean,
+      default: false,
+      required: true
+    },
+    gst_claimed_at: {
+      type: Date
+    },
+    user_gst_number: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      validate: {
+        validator: function (v) {
+          // GST number format: 22AAAAA0000A1Z5 (15 characters)
+          if (!v) return true; // Allow empty
+          return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(v);
+        },
+        message: props => `${props.value} is not a valid GST number format!`
+      }
+    }
   },
   {
     timestamps: true,

@@ -11,6 +11,20 @@ const uploadRoutes = require("./routes/uploadRoutes");
 const inquiryRoutes = require("./routes/inquiryRoutes");
 const couponRoutes = require("./routes/couponRoutes");
 const invoiceRoutes = require("./routes/invoiceRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
+
+// Security middleware imports
+const {
+  securityHeaders,
+  mongoSanitizeMiddleware,
+  xssProtection,
+  apiLimiter,
+  parameterPollutionProtection,
+  hidePoweredBy,
+  suspiciousActivityLogger,
+  preventDirectoryTraversal
+} = require("./middleware/securityMiddleware");
+const { requestLogger } = require("./middleware/securityLogger");
 
 dotenv.config();
 
@@ -45,8 +59,51 @@ const corsOptions = {
   optionsSuccessStatus: 200,
 };
 
+// ==================== SECURITY MIDDLEWARE ====================
+// OWASP A05:2021 – Security Misconfiguration
+// Apply security headers first
+app.use(securityHeaders());
+
+// OWASP A05:2021 – Security Misconfiguration
+// Hide technology stack
+app.use(hidePoweredBy);
+
+// Enable CORS
 app.use(cors(corsOptions));
-app.use(express.json());
+
+// Body parser with size limits to prevent DoS
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// OWASP A03:2021 – Injection
+// Sanitize data against NoSQL query injection
+app.use(mongoSanitizeMiddleware());
+
+// OWASP A03:2021 – Injection (XSS)
+// Prevent XSS attacks
+app.use(xssProtection());
+
+// OWASP A03:2021 – Injection
+// Prevent HTTP Parameter Pollution
+app.use(parameterPollutionProtection());
+
+// OWASP A09:2021 – Security Logging and Monitoring
+// Log all requests
+app.use(requestLogger);
+
+// OWASP A09:2021 – Security Logging and Monitoring
+// Log suspicious activities
+app.use(suspiciousActivityLogger);
+
+// OWASP A01:2021 – Broken Access Control
+// Prevent directory traversal
+app.use(preventDirectoryTraversal);
+
+// OWASP A01:2021 – Broken Access Control
+// Apply rate limiting to all routes
+app.use('/api/', apiLimiter);
+
+// ==================== SOCKET.IO SETUP ====================
 
 const io = new Server(server, {
   cors: {
@@ -97,16 +154,20 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/inquiries", inquiryRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/invoices", invoiceRoutes);
+app.use("/api/reviews", reviewRoutes);
 app.use("/api/b2b", require("./routes/b2bRoutes"));
 app.use("/api/settings", require("./routes/settingsRoutes"));
 app.use("/api/contact", require("./routes/contactRoutes"));
 app.use("/api/blogs", require("./routes/blogRoutes"));
 app.use("/api/vendors", require("./routes/vendorRoutes"));
+app.use("/api/vendors/invoices", require("./routes/vendorInvoiceRoutes"));
 app.use("/api/vendor-messages", require("./routes/vendorMessageRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
+app.use("/api/admin", require("./routes/gstRoutes"));
 app.use("/api/payment", require("./routes/paymentRoutes"));
 app.use("/api/refunds", require("./routes/refundRoutes"));
+app.use("/api/gst", require("./routes/publicGSTRoutes"));
 app.use("/api/cache", require("./routes/cacheRoutes"));
 
 app.get("/", (req, res) => {
